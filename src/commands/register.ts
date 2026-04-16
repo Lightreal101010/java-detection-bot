@@ -10,7 +10,7 @@ export async function registerCommands(client: Client<true>) {
   const commands = [
     new SlashCommandBuilder()
       .setName('ticketpanel')
-      .setDescription('Sendet das Ticket Panel')
+      .setDescription('Sends the ticket panel')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   ].map((cmd) => cmd.toJSON());
 
