@@ -9,6 +9,18 @@ import { handleInteraction } from './handlers/interaction.js';
 import { handleMessage } from './handlers/message.js';
 import { registerLogEvents } from './handlers/logs.js';
 
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('UNCAUGHT EXCEPTION:', error);
+});
+
+process.on('SIGTERM', () => {
+  console.error('Process received SIGTERM');
+});
+
 const token = process.env.DISCORD_BOT_TOKEN;
 
 if (!token) {
@@ -42,13 +54,18 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error('Failed to register slash commands:', error);
   }
 
-  registerLogEvents(readyClient);
+  try {
+    registerLogEvents(readyClient);
+    console.log('Log events registered');
+  } catch (error) {
+    console.error('Failed to register log events:', error);
+  }
 });
 
 client.on(Events.InteractionCreate, handleInteraction);
 client.on(Events.MessageCreate, handleMessage);
 
 client.login(token).catch((error) => {
-  console.error('Login failed:', error);
+  console.error('Discord login failed:', error);
   process.exit(1);
 });
