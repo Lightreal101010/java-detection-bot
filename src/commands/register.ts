@@ -6,26 +6,50 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 
-export async function registerCommands(client: Client<true>) {
-  const commands = [
+export type SlashCommandName =
+  | 'ticketpanel'
+  | 'ticket'
+  | 'staff'
+  | 'ping'
+  | 'help';
+
+export function buildCommands() {
+  return [
     new SlashCommandBuilder()
       .setName('ticketpanel')
-      .setDescription('Sends the ticket panel')
+      .setDescription('Send the ticket panel')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+    new SlashCommandBuilder()
+      .setName('ticket')
+      .setDescription('Ticket tools')
+      .addSubcommand((sub) =>
+        sub
+          .setName('send')
+          .setDescription('Send the ticket panel')
+      )
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     new SlashCommandBuilder()
       .setName('staff')
-      .setDescription('Staff command'),
+      .setDescription('Staff information')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
     new SlashCommandBuilder()
-      .setName('ticket')
-      .setDescription('Ticket command'),
-  ].map((cmd) => cmd.toJSON());
+      .setName('ping')
+      .setDescription('Check bot latency'),
 
+    new SlashCommandBuilder()
+      .setName('help')
+      .setDescription('Show bot help'),
+  ].map((cmd) => cmd.toJSON());
+}
+
+export async function registerCommands(client: Client<true>) {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN!);
 
   await rest.put(
     Routes.applicationCommands(client.user.id),
-    { body: commands },
+    { body: buildCommands() },
   );
 }
