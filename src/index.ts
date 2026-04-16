@@ -11,13 +11,12 @@ import { handleMessage } from './handlers/message.js';
 import { registerLogEvents } from './handlers/logs.js';
 
 const token = process.env.DISCORD_BOT_TOKEN;
+const AUTO_ROLE_ID = '1494121818854785034';
 
 if (!token) {
   console.error('DISCORD_BOT_TOKEN is not set!');
   process.exit(1);
 }
-
-const AUTO_ROLE_ID = '1494121818854785034';
 
 const client = new Client({
   intents: [
@@ -40,7 +39,7 @@ client.once(Events.ClientReady, async (readyClient) => {
 
   try {
     await registerCommands(readyClient);
-    console.log('Slash commands registered');
+    console.log('Slash commands registered successfully');
   } catch (error) {
     console.error('Failed to register slash commands:', error);
   }
