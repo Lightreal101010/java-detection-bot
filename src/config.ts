@@ -1,14 +1,8 @@
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "outDir": "dist",
-    "rootDir": "src",
-    "strict": false,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true
-  },
-  "include": ["src/**/*.ts"]
-}
+export const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
+export const OPENAI_API_KEY = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || '';
+export const OPENAI_BASE_URL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1';
+
+export const TICKET_CATEGORY_ID = '1494310963665567784';
+export const TICKET_LOG_CHANNEL_ID = '1494310988445388822';
+export const MOD_LOG_CHANNEL_ID = '1494311113452687391';
+export const AUTO_ROLE_ID = '1494121818854785034';
