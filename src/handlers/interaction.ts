@@ -1,81 +1,214 @@
-import { Interaction, ChatInputCommandInteraction, ButtonInteraction } from 'discord.js';
-import { handleStaff } from '../commands/staff.js';
-import { handleBan } from '../commands/ban.js';
-import { handleKick } from '../commands/kick.js';
-import { handleMute, handleUnmute } from '../commands/mute.js';
-import { handleWarn, handleWarnings, handleClearWarnings } from '../commands/warn.js';
-import { handleClear } from '../commands/clear.js';
-import { handleUserInfo } from '../commands/userinfo.js';
-import { handleServerInfo } from '../commands/serverinfo.js';
-import { handleSlowmode } from '../commands/slowmode.js';
-import { handleLock, handleUnlock } from '../commands/lock.js';
-import { handleAnnounce } from '../commands/announce.js';
-import { handleScan } from '../commands/scan.js';
-import { handleHelp } from '../commands/help.js';
-import { handleCheater, handleCheaterLog } from '../commands/cheater.js';
-import { handleCheckInvite } from '../commands/checkinvite.js';
-import { handleTicket, handleCloseTicketButton } from '../commands/ticket.js';
-import { handleTrack, handleExpose, handleWatchlist, handleEvidence } from '../commands/intimidate.js';
-import { handleProfile, handleIntercept, handleDatabase, handleVerdict, handleFreeze, handleClassify } from '../commands/intimidate2.js';
-import { handleBreach } from '../commands/breach.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  EmbedBuilder,
+  Interaction,
+  PermissionFlagsBits,
+} from 'discord.js';
+
+const TICKET_CATEGORY_ID = '1494310963665567784';
+const TICKET_LOG_CHANNEL_ID = '1494310988445388822';
+
+async function sendTicketLog(guild: any, embed: EmbedBuilder) {
+  const channel = await guild.channels.fetch(TICKET_LOG_CHANNEL_ID).catch(() => null);
+  if (!channel) return;
+  if (!channel.isSendable()) return;
+
+  await channel.send({ embeds: [embed] }).catch(() => null);
+}
 
 export async function handleInteraction(interaction: Interaction) {
   try {
-    if (interaction.isButton()) {
-      const btn = interaction as ButtonInteraction;
-      if (btn.customId.startsWith('close_ticket_')) {
-        return await handleCloseTicketButton(btn);
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'ticketpanel') {
+        if (!interaction.guild) {
+          await interaction.reply({
+            content: 'Dieser Command funktioniert nur in einem Server.',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const member = interaction.member;
+        const hasPermission =
+          member &&
+          typeof member !== 'string' &&
+          member.permissions.has(PermissionFlagsBits.ManageGuild);
+
+        if (!hasPermission) {
+          await interaction.reply({
+            content: 'Du brauchst dafür die Berechtigung "Server verwalten".',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle('🎫 Ticket Support')
+          .setDescription(
+            'Klicke unten auf den Button, um ein Ticket zu erstellen.\n\n' +
+            'Bitte beschreibe dein Anliegen danach im Ticket.'
+          );
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId('create_ticket')
+            .setLabel('Ticket erstellen')
+            .setStyle(ButtonStyle.Primary),
+        );
+
+        await interaction.reply({
+          content: 'Ticket-Panel wurde gesendet.',
+          ephemeral: true,
+        });
+
+        if (!interaction.channel || !interaction.channel.isSendable()) return;
+
+        await interaction.channel.send({
+          embeds: [embed],
+          components: [row],
+        });
+
+        return;
       }
     }
 
-    if (!interaction.isChatInputCommand()) return;
-    const cmd = interaction as ChatInputCommandInteraction;
+    if (interaction.isButton()) {
+      if (!interaction.guild) return;
 
-    switch (cmd.commandName) {
-      case 'staff':        return await handleStaff(cmd);
-      case 'ban':          return await handleBan(cmd);
-      case 'kick':         return await handleKick(cmd);
-      case 'mute':         return await handleMute(cmd);
-      case 'unmute':       return await handleUnmute(cmd);
-      case 'warn':         return await handleWarn(cmd);
-      case 'warnings':     return await handleWarnings(cmd);
-      case 'clearwarnings':return await handleClearWarnings(cmd);
-      case 'clear':        return await handleClear(cmd);
-      case 'userinfo':     return await handleUserInfo(cmd);
-      case 'serverinfo':   return await handleServerInfo(cmd);
-      case 'slowmode':     return await handleSlowmode(cmd);
-      case 'lock':         return await handleLock(cmd);
-      case 'unlock':       return await handleUnlock(cmd);
-      case 'announce':     return await handleAnnounce(cmd);
-      case 'scan':         return await handleScan(cmd);
-      case 'help':         return await handleHelp(cmd);
-      case 'cheater':      return await handleCheater(cmd);
-      case 'cheaterlog':   return await handleCheaterLog(cmd);
-      case 'checkinvite':  return await handleCheckInvite(cmd);
-      case 'ticket':       return await handleTicket(cmd);
-      case 'track':        return await handleTrack(cmd);
-      case 'expose':       return await handleExpose(cmd);
-      case 'watchlist':    return await handleWatchlist(cmd);
-      case 'evidence':     return await handleEvidence(cmd);
-      case 'profile':      return await handleProfile(cmd);
-      case 'intercept':    return await handleIntercept(cmd);
-      case 'database':     return await handleDatabase(cmd);
-      case 'verdict':      return await handleVerdict(cmd);
-      case 'freeze':       return await handleFreeze(cmd);
-      case 'classify':     return await handleClassify(cmd);
-      case 'breach':       return await handleBreach(cmd);
-      default:
-        await cmd.reply({ content: 'Unknown command.', ephemeral: true });
+      if (interaction.customId === 'create_ticket') {
+        const existingTicket = interaction.guild.channels.cache.find((ch) => {
+          return ch.type === ChannelType.GuildText && ch.name === `ticket-${interaction.user.id}`;
+        });
+
+        if (existingTicket) {
+          await interaction.reply({
+            content: `Du hast bereits ein Ticket: ${existingTicket}`,
+            ephemeral: true,
+          });
+          return;
+        }
+
+        const ticketChannel = await interaction.guild.channels.create({
+          name: `ticket-${interaction.user.id}`,
+          type: ChannelType.GuildText,
+          parent: TICKET_CATEGORY_ID,
+          permissionOverwrites: [
+            {
+              id: interaction.guild.id,
+              deny: [PermissionFlagsBits.ViewChannel],
+            },
+            {
+              id: interaction.user.id,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.AttachFiles,
+              ],
+            },
+            {
+              id: interaction.client.user!.id,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.ManageChannels,
+              ],
+            },
+          ],
+        });
+
+        const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId('close_ticket')
+            .setLabel('Ticket schließen')
+            .setStyle(ButtonStyle.Danger),
+        );
+
+        const embed = new EmbedBuilder()
+          .setTitle('📩 Ticket erstellt')
+          .setDescription(
+            `Hallo ${interaction.user},\n` +
+            `bitte schreibe hier dein Anliegen rein.\n\n` +
+            `Ein Teammitglied wird sich bald melden.`
+          );
+
+        await ticketChannel.send({
+          content: `${interaction.user}`,
+          embeds: [embed],
+          components: [closeRow],
+        });
+
+        await interaction.reply({
+          content: `Dein Ticket wurde erstellt: ${ticketChannel}`,
+          ephemeral: true,
+        });
+
+        await sendTicketLog(
+          interaction.guild,
+          new EmbedBuilder()
+            .setTitle('📂 Ticket erstellt')
+            .setDescription(
+              `User: ${interaction.user.tag}\n` +
+              `User ID: ${interaction.user.id}\n` +
+              `Channel: ${ticketChannel}`
+            ),
+        );
+
+        return;
+      }
+
+      if (interaction.customId === 'close_ticket') {
+        const channel = interaction.channel;
+
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          await interaction.reply({
+            content: 'Das geht nur in Ticket-Channels.',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!channel.name.startsWith('ticket-')) {
+          await interaction.reply({
+            content: 'Das ist kein Ticket-Channel.',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        await interaction.reply({
+          content: 'Ticket wird in 3 Sekunden geschlossen...',
+        });
+
+        await sendTicketLog(
+          interaction.guild,
+          new EmbedBuilder()
+            .setTitle('🔒 Ticket geschlossen')
+            .setDescription(
+              `Channel: #${channel.name}\n` +
+              `Geschlossen von: ${interaction.user.tag}`
+            ),
+        );
+
+        setTimeout(async () => {
+          await channel.delete().catch(() => null);
+        }, 3000);
+
+        return;
+      }
     }
   } catch (error) {
-    console.error('Error handling interaction:', error);
-    try {
-      const reply = { content: 'An error occurred while executing this command.', ephemeral: true };
-      if ((interaction as any).replied || (interaction as any).deferred) {
-        await (interaction as any).followUp(reply);
-      } else {
-        await (interaction as any).reply(reply);
-      }
-    } catch {}
+    console.error('Interaction handler error:', error);
+
+    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'Es ist ein Fehler passiert.',
+        ephemeral: true,
+      }).catch(() => null);
+    }
   }
 }
