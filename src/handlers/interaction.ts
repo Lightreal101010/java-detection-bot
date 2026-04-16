@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
@@ -9,22 +10,19 @@ import {
   PermissionFlagsBits,
   StringSelectMenuBuilder,
 } from 'discord.js';
+import { CONFIG } from '../config.js';
 
-const TICKET_CATEGORY_ID = '1494310963665567784';
-const TICKET_LOG_CHANNEL_ID = '1494310988445388822';
-const STAFF_ROLE_ID = '1494121721513381908';
-
-async function sendTicketLog(guild: any, embed: EmbedBuilder) {
-  const channel = await guild.channels.fetch(TICKET_LOG_CHANNEL_ID).catch(() => null);
+async function sendTicketLog(guild: any, payload: any) {
+  const channel = await guild.channels.fetch(CONFIG.TICKET_LOG_CHANNEL_ID).catch(() => null);
   if (!channel || !channel.isSendable()) return;
-  await channel.send({ embeds: [embed] }).catch(() => null);
+  await channel.send(payload).catch(() => null);
 }
 
 function prettyType(type: string) {
   switch (type) {
     case 'support':
       return 'Support';
-    case 'scanner-help':
+    case 'scanner':
       return 'Scanner Help';
     case 'partnership':
       return 'Partnership';
@@ -33,21 +31,80 @@ function prettyType(type: string) {
   }
 }
 
-function ticketName(type: string, userId: string) {
+function getCategoryId(type: string) {
+  switch (type) {
+    case 'support':
+      return CONFIG.SUPPORT_CATEGORY_ID;
+    case 'scanner':
+      return CONFIG.SCANNER_CATEGORY_ID;
+    case 'partnership':
+      return CONFIG.PARTNERSHIP_CATEGORY_ID;
+    default:
+      return CONFIG.SUPPORT_CATEGORY_ID;
+  }
+}
+
+function makeTicketName(type: string, userId: string) {
   return `${type}-${userId}`;
 }
 
-async function sendTicketPanel(interaction: Interaction) {
-  if (!interaction.isRepliable()) return;
-  if (!interaction.guild) {
-    await interaction.reply({
-      content: 'This command only works inside a server.',
-      ephemeral: true,
+function escapeTranscriptText(value: string | null | undefined) {
+  if (!value) return '';
+  return value.replace(/\r/g, '');
+}
+
+async function buildTranscript(channel: any) {
+  const allMessages: any[] = [];
+  let lastId: string | undefined;
+
+  while (true) {
+    const fetched = await channel.messages.fetch({
+      limit: 100,
+      before: lastId,
     });
-    return;
+
+    if (!fetched || fetched.size === 0) break;
+
+    const batch = [...fetched.values()];
+    allMessages.push(...batch);
+
+    if (fetched.size < 100) break;
+    lastId = batch[batch.length - 1].id;
   }
 
+  allMessages.reverse();
+
+  const lines: string[] = [];
+  lines.push(`Transcript for #${channel.name}`);
+  lines.push(`Channel ID: ${channel.id}`);
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push('='.repeat(60));
+
+  for (const msg of allMessages) {
+    const created = new Date(msg.createdTimestamp).toISOString();
+    const author = msg.author ? `${msg.author.tag} (${msg.author.id})` : 'Unknown User';
+    const content = escapeTranscriptText(msg.content) || '[no text content]';
+
+    lines.push(`[${created}] ${author}`);
+    lines.push(content);
+
+    if (msg.attachments?.size) {
+      for (const attachment of msg.attachments.values()) {
+        lines.push(`Attachment: ${attachment.name} -> ${attachment.url}`);
+      }
+    }
+
+    lines.push('-'.repeat(60));
+  }
+
+  return lines.join('\n');
+}
+
+async function sendTicketPanel(interaction: Interaction) {
+  if (!interaction.isRepliable() || !interaction.guild) return;
+
   const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+
   if (!(member instanceof GuildMember)) {
     await interaction.reply({
       content: 'Could not verify your permissions.',
@@ -81,19 +138,19 @@ async function sendTicketPanel(interaction: Interaction) {
     .addOptions(
       {
         label: 'Support',
-        description: 'General questions and support',
+        description: 'General support and questions',
         value: 'support',
         emoji: '🎫',
       },
       {
         label: 'Scanner Help',
-        description: 'Help with scanner setup or usage',
-        value: 'scanner-help',
+        description: 'Help with scanner setup and scanner issues',
+        value: 'scanner',
         emoji: '🛠️',
       },
       {
         label: 'Partnership',
-        description: 'Business and partnership requests',
+        description: 'Business and partnership inquiries',
         value: 'partnership',
         emoji: '🤝',
       },
@@ -128,17 +185,11 @@ export async function handleInteraction(interaction: Interaction) {
           await sendTicketPanel(interaction);
           return;
         }
-
-        await interaction.reply({
-          content: 'Unknown ticket subcommand.',
-          ephemeral: true,
-        });
-        return;
       }
 
       if (interaction.commandName === 'ping') {
         await interaction.reply({
-          content: `Pong! Latency: ${interaction.client.ws.ping}ms`,
+          content: `Pong! ${interaction.client.ws.ping}ms`,
           ephemeral: true,
         });
         return;
@@ -147,12 +198,12 @@ export async function handleInteraction(interaction: Interaction) {
       if (interaction.commandName === 'help') {
         await interaction.reply({
           content:
-            '**Available commands:**\n' +
-            '/ticketpanel - Send the ticket panel\n' +
-            '/ticket send - Send the ticket panel\n' +
-            '/ping - Show bot latency\n' +
-            '/help - Show this message\n' +
-            '/staff - Show staff info',
+            '**Commands:**\n' +
+            '/ticketpanel\n' +
+            '/ticket send\n' +
+            '/ping\n' +
+            '/help\n' +
+            '/staff',
           ephemeral: true,
         });
         return;
@@ -160,7 +211,7 @@ export async function handleInteraction(interaction: Interaction) {
 
       if (interaction.commandName === 'staff') {
         await interaction.reply({
-          content: `Staff role ID: ${STAFF_ROLE_ID}`,
+          content: `Staff role: <@&${CONFIG.STAFF_ROLE_ID}>`,
           ephemeral: true,
         });
         return;
@@ -172,7 +223,7 @@ export async function handleInteraction(interaction: Interaction) {
       if (interaction.customId !== 'ticket_type_select') return;
 
       const type = interaction.values[0];
-      const name = ticketName(type, interaction.user.id);
+      const name = makeTicketName(type, interaction.user.id);
 
       const existing = interaction.guild.channels.cache.find(
         (ch) => ch.type === ChannelType.GuildText && ch.name === name,
@@ -189,10 +240,14 @@ export async function handleInteraction(interaction: Interaction) {
       const channel = await interaction.guild.channels.create({
         name,
         type: ChannelType.GuildText,
-        parent: TICKET_CATEGORY_ID,
+        parent: getCategoryId(type),
         permissionOverwrites: [
           {
             id: interaction.guild.id,
+            deny: [PermissionFlagsBits.ViewChannel],
+          },
+          {
+            id: CONFIG.MEMBER_ROLE_ID,
             deny: [PermissionFlagsBits.ViewChannel],
           },
           {
@@ -205,7 +260,7 @@ export async function handleInteraction(interaction: Interaction) {
             ],
           },
           {
-            id: STAFF_ROLE_ID,
+            id: CONFIG.STAFF_ROLE_ID,
             allow: [
               PermissionFlagsBits.ViewChannel,
               PermissionFlagsBits.SendMessages,
@@ -237,13 +292,13 @@ export async function handleInteraction(interaction: Interaction) {
         .setTitle(`📩 ${prettyType(type)} Ticket`)
         .setDescription(
           `Hello ${interaction.user},\n\n` +
-          `Please explain your request in detail.\n` +
-          `A staff member will assist you soon.\n\n` +
+          `Please explain your issue in detail.\n` +
+          `A staff member will help you as soon as possible.\n\n` +
           `**Category:** ${prettyType(type)}`
         );
 
       await channel.send({
-        content: `<@${interaction.user.id}> <@&${STAFF_ROLE_ID}>`,
+        content: `<@${interaction.user.id}> <@&${CONFIG.STAFF_ROLE_ID}>`,
         embeds: [embed],
         components: [closeRow],
       });
@@ -253,17 +308,18 @@ export async function handleInteraction(interaction: Interaction) {
         ephemeral: true,
       });
 
-      await sendTicketLog(
-        interaction.guild,
-        new EmbedBuilder()
-          .setTitle('📂 Ticket Created')
-          .setDescription(
-            `**User:** ${interaction.user.tag}\n` +
-            `**User ID:** ${interaction.user.id}\n` +
-            `**Type:** ${prettyType(type)}\n` +
-            `**Channel:** ${channel}`
-          ),
-      );
+      await sendTicketLog(interaction.guild, {
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('📂 Ticket Created')
+            .setDescription(
+              `**User:** ${interaction.user.tag}\n` +
+              `**User ID:** ${interaction.user.id}\n` +
+              `**Type:** ${prettyType(type)}\n` +
+              `**Channel:** ${channel}`
+            ),
+        ],
+      });
 
       return;
     }
@@ -281,28 +337,27 @@ export async function handleInteraction(interaction: Interaction) {
         return;
       }
 
-      const validPrefixes = ['support-', 'scanner-help-', 'partnership-'];
-      if (!validPrefixes.some((prefix) => channel.name.startsWith(prefix))) {
-        await interaction.reply({
-          content: 'This is not a valid ticket channel.',
-          ephemeral: true,
-        });
-        return;
-      }
-
       await interaction.reply({
-        content: 'This ticket will be closed in 3 seconds...',
+        content: 'Saving transcript and closing this ticket in 3 seconds...',
       });
 
-      await sendTicketLog(
-        interaction.guild,
-        new EmbedBuilder()
-          .setTitle('🔒 Ticket Closed')
-          .setDescription(
-            `**Channel:** #${channel.name}\n` +
-            `**Closed by:** ${interaction.user.tag}`
-          ),
-      );
+      const transcriptText = await buildTranscript(channel);
+      const transcriptBuffer = Buffer.from(transcriptText, 'utf-8');
+      const transcriptFile = new AttachmentBuilder(transcriptBuffer, {
+        name: `${channel.name}-transcript.txt`,
+      });
+
+      await sendTicketLog(interaction.guild, {
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🔒 Ticket Closed')
+            .setDescription(
+              `**Channel:** #${channel.name}\n` +
+              `**Closed by:** ${interaction.user.tag}`
+            ),
+        ],
+        files: [transcriptFile],
+      });
 
       setTimeout(async () => {
         await channel.delete().catch(() => null);
