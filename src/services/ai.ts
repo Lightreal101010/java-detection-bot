@@ -1,9 +1,15 @@
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-});
+const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+
+const openai =
+  apiKey
+    ? new OpenAI({
+        baseURL,
+        apiKey,
+      })
+    : null;
 
 const SYSTEM_PROMPT = `You are CheatGuard AI, a helpful assistant for a gaming community Discord server focused on cheat detection and fair play.
 
@@ -27,6 +33,13 @@ export async function getAIResponse(
   conversationHistory: { role: 'user' | 'assistant'; content: string }[]
 ): Promise<{ response: string; needsAdmin: boolean }> {
   try {
+    if (!openai) {
+      return {
+        response: 'AI is not configured right now.',
+        needsAdmin: false,
+      };
+    }
+
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...conversationHistory.slice(-10),
@@ -39,11 +52,17 @@ export async function getAIResponse(
       max_completion_tokens: 1024,
     });
 
-    const response = completion.choices[0]?.message?.content || 'I could not generate a response.';
+    const response =
+      completion.choices[0]?.message?.content ||
+      'I could not generate a response.';
+
     const needsAdmin = response.includes('[NEEDS_ADMIN]');
     const cleanResponse = response.replace('[NEEDS_ADMIN]', '').trim();
 
-    return { response: cleanResponse, needsAdmin };
+    return {
+      response: cleanResponse,
+      needsAdmin,
+    };
   } catch (error) {
     console.error('AI response error:', error);
     return {
