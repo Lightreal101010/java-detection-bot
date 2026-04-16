@@ -1,55 +1,61 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  Client,
-  PermissionFlagsBits,
-  REST,
-  Routes,
+  ChatInputCommandInteraction,
   SlashCommandBuilder,
+  SlashCommandSubcommandsOnlyBuilder,
 } from 'discord.js';
 
-export type SlashCommandName =
-  | 'ticketpanel'
-  | 'ticket'
-  | 'staff'
-  | 'ping'
-  | 'help';
+export type BotCommand = {
+  data: SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder;
+  execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
+};
 
-export function buildCommands() {
-  return [
-    new SlashCommandBuilder()
-      .setName('ticketpanel')
-      .setDescription('Send the ticket panel')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-    new SlashCommandBuilder()
-      .setName('ticket')
-      .setDescription('Ticket tools')
-      .addSubcommand((sub) =>
-        sub
-          .setName('send')
-          .setDescription('Send the ticket panel')
-      )
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+const cachedCommands = new Map<string, BotCommand>();
 
-    new SlashCommandBuilder()
-      .setName('staff')
-      .setDescription('Staff information')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+export async function loadSlashCommands() {
+  cachedCommands.clear();
 
-    new SlashCommandBuilder()
-      .setName('ping')
-      .setDescription('Check bot latency'),
+  const files = fs
+    .readdirSync(__dirname)
+    .filter(
+      (file) =>
+        file.endsWith('.js') &&
+        !['register.js', 'registry.js'].includes(file),
+    );
 
-    new SlashCommandBuilder()
-      .setName('help')
-      .setDescription('Show bot help'),
-  ].map((cmd) => cmd.toJSON());
+  const json: ReturnType<BotCommand['data']['toJSON']>[] = [];
+
+  for (const file of files) {
+    const fullPath = path.join(__dirname, file);
+    const mod = await import(pathToFileURL(fullPath).href);
+
+    const command: BotCommand | undefined =
+      mod.default ?? mod.command ?? undefined;
+
+    if (!command?.data || typeof command.execute !== 'function') {
+      console.warn(`Skipped command file: ${file}`);
+      continue;
+    }
+
+    cachedCommands.set(command.data.name, command);
+    json.push(command.data.toJSON());
+  }
+
+  return {
+    json,
+    commands: cachedCommands,
+  };
 }
 
-export async function registerCommands(client: Client<true>) {
-  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN!);
+export function getSlashCommand(name: string) {
+  return cachedCommands.get(name);
+}
 
-  await rest.put(
-    Routes.applicationCommands(client.user.id),
-    { body: buildCommands() },
-  );
+export function getAllLoadedCommands() {
+  return cachedCommands;
 }
