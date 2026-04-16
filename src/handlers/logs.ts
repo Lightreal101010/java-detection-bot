@@ -4,27 +4,18 @@ import {
   EmbedBuilder,
   Events,
   Guild,
-  Message,
-  TextBasedChannel,
 } from 'discord.js';
 
 const modLogChannelId = process.env.MOD_LOG_CHANNEL_ID || '';
 
-async function getLogChannel(guild: Guild): Promise<TextBasedChannel | null> {
-  if (!modLogChannelId) return null;
+async function sendLog(guild: Guild, embed: EmbedBuilder) {
+  if (!modLogChannelId) return;
 
   const channel = await guild.channels.fetch(modLogChannelId).catch(() => null);
-  if (!channel) return null;
-  if (!channel.isTextBased()) return null;
+  if (!channel) return;
+  if (!channel.isSendable()) return;
 
-  return channel;
-}
-
-async function sendLog(guild: Guild, embed: EmbedBuilder) {
-  const logChannel = await getLogChannel(guild);
-  if (!logChannel) return;
-
-  await logChannel.send({ embeds: [embed] }).catch(() => null);
+  await channel.send({ embeds: [embed] }).catch(() => null);
 }
 
 function safeContent(content: string | null | undefined, max = 900) {
@@ -51,17 +42,29 @@ export function registerLogEvents(client: Client) {
     );
   });
 
-  client.on(Events.MessageDelete, async (message: Message) => {
-    if (!message.guild || message.author?.bot) return;
+  client.on(Events.MessageDelete, async (message) => {
+    if (!message.guild) return;
+    if (message.author?.bot) return;
 
     await sendLog(
       message.guild,
       new EmbedBuilder()
         .setTitle('🗑️ Nachricht gelöscht')
         .addFields(
-          { name: 'User', value: message.author ? `${message.author.tag}` : 'Unbekannt', inline: true },
-          { name: 'Channel', value: message.channel.toString(), inline: true },
-          { name: 'Inhalt', value: safeContent(message.content) },
+          {
+            name: 'User',
+            value: message.author ? message.author.tag : 'Unbekannt',
+            inline: true,
+          },
+          {
+            name: 'Channel',
+            value: message.channel.toString(),
+            inline: true,
+          },
+          {
+            name: 'Inhalt',
+            value: safeContent(message.content),
+          },
         ),
     );
   });
@@ -70,8 +73,8 @@ export function registerLogEvents(client: Client) {
     if (!newMessage.guild) return;
     if (newMessage.author?.bot) return;
 
-    const oldContent = 'content' in oldMessage ? oldMessage.content : null;
-    const newContent = newMessage.content;
+    const oldContent = oldMessage.content ?? null;
+    const newContent = newMessage.content ?? null;
 
     if (oldContent === newContent) return;
 
@@ -80,16 +83,30 @@ export function registerLogEvents(client: Client) {
       new EmbedBuilder()
         .setTitle('✏️ Nachricht bearbeitet')
         .addFields(
-          { name: 'User', value: newMessage.author ? `${newMessage.author.tag}` : 'Unbekannt', inline: true },
-          { name: 'Channel', value: newMessage.channel.toString(), inline: true },
-          { name: 'Alt', value: safeContent(oldContent) },
-          { name: 'Neu', value: safeContent(newContent) },
+          {
+            name: 'User',
+            value: newMessage.author ? newMessage.author.tag : 'Unbekannt',
+            inline: true,
+          },
+          {
+            name: 'Channel',
+            value: newMessage.channel.toString(),
+            inline: true,
+          },
+          {
+            name: 'Alt',
+            value: safeContent(oldContent),
+          },
+          {
+            name: 'Neu',
+            value: safeContent(newContent),
+          },
         ),
     );
   });
 
   client.on(Events.ChannelCreate, async (channel) => {
-    if (!channel.guild) return;
+    if (!('guild' in channel)) return;
 
     await sendLog(
       channel.guild,
@@ -100,13 +117,13 @@ export function registerLogEvents(client: Client) {
   });
 
   client.on(Events.ChannelDelete, async (channel) => {
-    if (!channel.guild) return;
+    if (!('guild' in channel)) return;
 
     await sendLog(
       channel.guild,
       new EmbedBuilder()
         .setTitle('🗑️ Channel gelöscht')
-        .setDescription(`Name: ${channel.name}`),
+        .setDescription(`Name: ${'name' in channel ? channel.name : 'Unbekannt'}`),
     );
   });
 
@@ -147,18 +164,16 @@ export function registerLogEvents(client: Client) {
   });
 
   client.on(Events.GuildAuditLogEntryCreate, async (entry, guild) => {
-    if (!guild) return;
+    if (entry.action !== AuditLogEvent.MemberKick) return;
 
-    if (entry.action === AuditLogEvent.MemberKick) {
-      await sendLog(
-        guild,
-        new EmbedBuilder()
-          .setTitle('👢 User gekickt')
-          .setDescription(
-            `Target: ${entry.targetId ?? 'Unbekannt'}\n` +
-            `Von: ${entry.executor?.tag ?? 'Unbekannt'}`
-          ),
-      );
-    }
+    await sendLog(
+      guild,
+      new EmbedBuilder()
+        .setTitle('👢 User gekickt')
+        .setDescription(
+          `Target: ${entry.targetId ?? 'Unbekannt'}\n` +
+          `Von: ${entry.executor?.tag ?? 'Unbekannt'}`
+        ),
+    );
   });
 }
