@@ -7,4 +7,6 @@ export const CONFIG = {
   ticketLogChannelId: '1494310988445388822',
   modLogChannelId: '1494311113452687391',
   autoRoleId: '1494121818854785034',
+
+  STAFF_ROLE_ID: '1494121818854785034',
 };
