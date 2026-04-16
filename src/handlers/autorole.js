@@ -13,8 +13,13 @@ export async function handleAutoRole(member: GuildMember) {
       return;
     }
 
-    await member.roles.add(role);
-    console.log(`Auto role "${role.name}" added to ${member.user.tag}`);
+    if (member.roles.cache.has(AUTO_ROLE_ID)) {
+      console.log(`${member.user.tag} already has the auto role`);
+      return;
+    }
+
+    await member.roles.add(AUTO_ROLE_ID);
+    console.log(`Auto role added to ${member.user.tag}`);
   } catch (error) {
     console.error('Failed to add auto role:', error);
   }
