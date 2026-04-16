@@ -6,12 +6,10 @@ import {
   Guild,
 } from 'discord.js';
 
-const modLogChannelId = process.env.MOD_LOG_CHANNEL_ID || '';
+const MOD_LOG_CHANNEL_ID = '1494311113452687391';
 
 async function sendLog(guild: Guild, embed: EmbedBuilder) {
-  if (!modLogChannelId) return;
-
-  const channel = await guild.channels.fetch(modLogChannelId).catch(() => null);
+  const channel = await guild.channels.fetch(MOD_LOG_CHANNEL_ID).catch(() => null);
   if (!channel) return;
   if (!channel.isSendable()) return;
 
