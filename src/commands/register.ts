@@ -21,5 +21,6 @@ export async function registerCommands(client: Client<true>) {
     Routes.applicationCommands(client.user.id),
     { body: json },
   );
+
   console.log(`Registered ${json.length} global commands`);
 }
