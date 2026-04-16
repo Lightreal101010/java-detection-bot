@@ -8,7 +8,6 @@ import { registerCommands } from './commands/register.js';
 import { handleInteraction } from './handlers/interaction.js';
 import { handleMessage } from './handlers/message.js';
 import { registerLogEvents } from './handlers/logs.js';
-import { handleAutoRole } from './handlers/autorole.js';
 
 const token = process.env.DISCORD_BOT_TOKEN;
 
@@ -48,7 +47,6 @@ client.once(Events.ClientReady, async (readyClient) => {
 
 client.on(Events.InteractionCreate, handleInteraction);
 client.on(Events.MessageCreate, handleMessage);
-client.on(Events.GuildMemberAdd, handleAutoRole);
 
 client.login(token).catch((error) => {
   console.error('Discord login failed:', error);
