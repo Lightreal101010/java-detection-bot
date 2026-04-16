@@ -1,112 +1,62 @@
-import { Message, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import { Message } from 'discord.js';
 import { getAIResponse } from '../services/ai.js';
-import { CONFIG } from '../config.js';
 
-const conversationHistories = new Map<string, { role: 'user' | 'assistant'; content: string }[]>();
-const adminTakenOver = new Map<string, number>();
-const TAKEOVER_COOLDOWN = 5 * 60 * 1000;
-
-const AYDO_NAMES = ['aydo', 'aydoo', 'aydo.', '@aydo'];
-
-function isAdmin(message: Message): boolean {
-  if (!message.member) return false;
-  return (
-    message.member.permissions.has(PermissionFlagsBits.Administrator) ||
-    message.member.roles.cache.some(r => r.name.toLowerCase() === CONFIG.ADMIN_ROLE_NAME.toLowerCase())
-  );
-}
-
-function mentionsAydo(content: string): boolean {
-  const lower = content.toLowerCase();
-  return AYDO_NAMES.some(name => lower.includes(name));
-}
-
-function shouldAIRespond(message: Message): boolean {
-  if (message.author.bot) return false;
-  if (!message.guild) return false;
-  const botUser = message.client.user;
-  if (!botUser) return false;
-  const isMentioned = message.mentions.has(botUser);
-  const isReplyToBot =
-    message.reference?.messageId
-      ? message.channel.messages.cache.get(message.reference.messageId)?.author?.id === botUser.id
-      : false;
-  return isMentioned || isReplyToBot;
-}
-
-function isAdminTakenOverChannel(channelId: string): boolean {
-  const timestamp = adminTakenOver.get(channelId);
-  if (!timestamp) return false;
-  if (Date.now() - timestamp > TAKEOVER_COOLDOWN) {
-    adminTakenOver.delete(channelId);
-    return false;
-  }
-  return true;
-}
+const conversationMemory = new Map<
+  string,
+  { role: 'user' | 'assistant'; content: string }[]
+>();
 
 export async function handleMessage(message: Message) {
-  if (message.author.bot) return;
-
-  // Aydo easter egg — always fires regardless of anything else
-  if (mentionsAydo(message.content)) {
-    await message.reply('daddy 😏');
-    return;
-  }
-
-  // If an admin writes and the bot has spoken recently, mark channel as taken over
-  if (isAdmin(message)) {
-    const recentBotMessage = message.channel.messages.cache.find(
-      m => m.author.id === message.client.user?.id && Date.now() - m.createdTimestamp < 60_000
-    );
-    if (recentBotMessage) {
-      adminTakenOver.set(message.channelId, Date.now());
-    } else if (isAdminTakenOverChannel(message.channelId)) {
-      // Refresh the takeover timer while admin is still active
-      adminTakenOver.set(message.channelId, Date.now());
-    }
-    return;
-  }
-
-  if (!shouldAIRespond(message)) return;
-  if (isAdminTakenOverChannel(message.channelId)) return;
-
-  const channelId = message.channelId;
-  const history = conversationHistories.get(channelId) || [];
-
   try {
-    await message.channel.sendTyping();
+    // ❌ Bots ignorieren
+    if (message.author.bot) return;
 
-    const userContent = message.content.replace(/<@!?\d+>/g, '').trim();
-    if (!userContent) return;
+    // ❌ Leere Nachrichten ignorieren
+    if (!message.content) return;
 
-    const { response, needsAdmin } = await getAIResponse(userContent, history);
+    const channel = message.channel;
 
-    history.push({ role: 'user', content: userContent });
-    history.push({ role: 'assistant', content: response });
-    if (history.length > 20) history.splice(0, history.length - 20);
-    conversationHistories.set(channelId, history);
+    // 🔥 FIX: TypeScript Safe Check
+    if (!channel.isSendable()) {
+      console.log('Channel not sendable:', channel.type);
+      return;
+    }
 
-    const embed = new EmbedBuilder()
-      .setColor(0x5865f2)
-      .setDescription(response)
-      .setFooter({ text: 'CheatGuard AI' })
-      .setTimestamp();
+    // 🔄 Conversation speichern (pro User)
+    const userId = message.author.id;
+    const history = conversationMemory.get(userId) || [];
 
-    await message.reply({ embeds: [embed] });
+    // Neue User Nachricht speichern
+    history.push({
+      role: 'user',
+      content: message.content,
+    });
 
-    if (needsAdmin) {
-      const adminRole = message.guild?.roles.cache.find(
-        r => r.name.toLowerCase() === CONFIG.ADMIN_ROLE_NAME.toLowerCase()
-      );
-      if (adminRole) {
-        await message.channel.send(
-          `${adminRole} — Admin assistance needed here. The AI will step back until an admin responds.`
-        );
-      } else {
-        await message.channel.send(
-          'An admin has been called to assist. The AI will step back until staff responds.'
-        );
-      }
+    // Max 10 Nachrichten behalten
+    if (history.length > 10) {
+      history.splice(0, history.length - 10);
+    }
+
+    // ⏳ Typing anzeigen
+    await channel.sendTyping();
+
+    // 🤖 AI Antwort holen
+    const ai = await getAIResponse(message.content, history);
+
+    // AI Antwort speichern
+    history.push({
+      role: 'assistant',
+      content: ai.response,
+    });
+
+    conversationMemory.set(userId, history);
+
+    // 📩 Antwort senden
+    await channel.send(ai.response);
+
+    // 🚨 Falls Admin benötigt wird
+    if (ai.needsAdmin) {
+      await channel.send('⚠️ Ein Admin wird benötigt.');
     }
   } catch (error) {
     console.error('Message handler error:', error);
