@@ -4,9 +4,9 @@ import {
   ButtonStyle,
   ChannelType,
   EmbedBuilder,
+  GuildMember,
   Interaction,
   PermissionFlagsBits,
-  GuildMember,
 } from 'discord.js';
 
 const TICKET_CATEGORY_ID = '1494310963665567784';
@@ -32,11 +32,11 @@ export async function handleInteraction(interaction: Interaction) {
           return;
         }
 
-        const member = interaction.member;
+        const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
 
         if (!(member instanceof GuildMember)) {
           await interaction.reply({
-            content: 'Mitglied konnte nicht korrekt erkannt werden.',
+            content: 'Mitglied konnte nicht erkannt werden.',
             ephemeral: true,
           });
           return;
