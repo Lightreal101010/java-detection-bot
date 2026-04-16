@@ -34,8 +34,7 @@ export async function loadSlashCommands() {
     const fullPath = path.join(__dirname, file);
     const mod = await import(pathToFileURL(fullPath).href);
 
-    const command: BotCommand | undefined =
-      mod.default ?? mod.command ?? undefined;
+    const command: BotCommand | undefined = mod.default ?? mod.command ?? undefined;
 
     if (!command?.data || typeof command.execute !== 'function') {
       console.warn(`Skipped command file: ${file}`);
@@ -46,16 +45,9 @@ export async function loadSlashCommands() {
     json.push(command.data.toJSON());
   }
 
-  return {
-    json,
-    commands: cachedCommands,
-  };
+  return { json, commands: cachedCommands };
 }
 
 export function getSlashCommand(name: string) {
   return cachedCommands.get(name);
-}
-
-export function getAllLoadedCommands() {
-  return cachedCommands;
 }
