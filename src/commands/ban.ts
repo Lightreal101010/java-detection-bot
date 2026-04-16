@@ -1,14 +1,32 @@
-import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  EmbedBuilder,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+  MessageFlags,
+} from 'discord.js';
 
-export async function handleBan(interaction: ChatInputCommandInteraction) {
+async function handleBan(interaction: ChatInputCommandInteraction) {
   const user = interaction.options.getUser('user', true);
   const reason = interaction.options.getString('reason') || 'No reason provided';
   const guild = interaction.guild;
-  if (!guild) return interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
+
+  if (!guild) {
+    await interaction.reply({
+      content: 'This command can only be used in a server.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
 
   const member = await guild.members.fetch(user.id).catch(() => null);
+
   if (member && !member.bannable) {
-    return interaction.reply({ content: 'I cannot ban this user. They may have a higher role.', ephemeral: true });
+    await interaction.reply({
+      content: 'I cannot ban this user. They may have a higher role.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
   }
 
   try {
@@ -21,12 +39,40 @@ export async function handleBan(interaction: ChatInputCommandInteraction) {
       .addFields(
         { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
         { name: 'Moderator', value: `${interaction.user}`, inline: true },
-        { name: 'Reason', value: reason }
+        { name: 'Reason', value: reason },
       )
       .setTimestamp();
 
     await interaction.reply({ embeds: [embed] });
-  } catch (err) {
-    await interaction.reply({ content: `Failed to ban ${user.tag}.`, ephemeral: true });
+  } catch {
+    await interaction.reply({
+      content: `Failed to ban ${user.tag}.`,
+      flags: MessageFlags.Ephemeral,
+    });
   }
 }
+
+export { handleBan };
+
+export default {
+  data: new SlashCommandBuilder()
+    .setName('ban')
+    .setDescription('Ban a user from the server')
+    .addUserOption((option) =>
+      option
+        .setName('user')
+        .setDescription('The user to ban')
+        .setRequired(true),
+    )
+    .addStringOption((option) =>
+      option
+        .setName('reason')
+        .setDescription('Reason for the ban')
+        .setRequired(false),
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+
+  async execute(interaction: ChatInputCommandInteraction) {
+    await handleBan(interaction);
+  },
+};
