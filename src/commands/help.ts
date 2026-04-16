@@ -1,12 +1,16 @@
-import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  EmbedBuilder,
+  SlashCommandBuilder,
+} from 'discord.js';
 
-export async function handleHelp(interaction: ChatInputCommandInteraction) {
+async function handleHelp(interaction: ChatInputCommandInteraction) {
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
-    .setTitle('CheatGuard Bot — Commands')
+    .setTitle('Trace bot — Commands')
     .addFields(
       {
-        name: '🔨 Moderation',
+        name: 'Moderation',
         value: [
           '`/ban` — Ban a user',
           '`/kick` — Kick a user',
@@ -21,11 +25,11 @@ export async function handleHelp(interaction: ChatInputCommandInteraction) {
         ].join('\n'),
       },
       {
-        name: '🎫 Tickets',
+        name: 'Tickets',
         value: '`/ticket` — Open a private support ticket',
       },
       {
-        name: '🚨 Cheat Scanner',
+        name: 'Cheat Scanner',
         value: [
           '`/scan` — Scan a user for red flags',
           '`/cheater` — Flag a Discord ID as a cheater *(Admin)*',
@@ -34,7 +38,7 @@ export async function handleHelp(interaction: ChatInputCommandInteraction) {
         ].join('\n'),
       },
       {
-        name: '🔴 Surveillance & Intimidation',
+        name: 'Surveillance & Intimidation',
         value: [
           '`/track` — Activate real-time surveillance',
           '`/expose` — Generate an exposure report',
@@ -49,7 +53,7 @@ export async function handleHelp(interaction: ChatInputCommandInteraction) {
         ].join('\n'),
       },
       {
-        name: '📋 Staff & Utility',
+        name: 'Staff & Utility',
         value: [
           '`/staff` — Add a user to staff *(Admin)*',
           '`/announce` — Post an announcement *(Admin)*',
@@ -59,8 +63,8 @@ export async function handleHelp(interaction: ChatInputCommandInteraction) {
         ].join('\n'),
       },
       {
-        name: '🤖 AI Chat',
-        value: 'Mention the bot or reply to it in any channel. Speaks English & German. Pings admins when it can\'t help.',
+        name: 'AI Chat',
+        value: 'Mention the bot or reply to it in any channel.\nSpeaks English & German. Pings admins when it can’t help.',
       },
     )
     .setFooter({ text: 'CheatGuard — Keeping your server clean' })
@@ -68,3 +72,15 @@ export async function handleHelp(interaction: ChatInputCommandInteraction) {
 
   await interaction.reply({ embeds: [embed] });
 }
+
+export { handleHelp };
+
+export default {
+  data: new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Show the help menu'),
+
+  async execute(interaction: ChatInputCommandInteraction) {
+    await handleHelp(interaction);
+  },
+};
