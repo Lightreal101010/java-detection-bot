@@ -4,10 +4,12 @@ import {
   GatewayIntentBits,
   Partials,
 } from 'discord.js';
+
 import { registerCommands } from './commands/register.js';
 import { handleInteraction } from './handlers/interaction.js';
 import { handleMessage } from './handlers/message.js';
 import { registerLogEvents } from './handlers/logs.js';
+import { handleAutoRole } from './handlers/autorole.js';
 
 const token = process.env.DISCORD_BOT_TOKEN;
 
@@ -19,7 +21,7 @@ if (!token) {
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMembers, // WICHTIG für AutoRole
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildModeration,
@@ -45,8 +47,12 @@ client.once(Events.ClientReady, async (readyClient) => {
   registerLogEvents(readyClient);
 });
 
+// 🔥 Events
 client.on(Events.InteractionCreate, handleInteraction);
 client.on(Events.MessageCreate, handleMessage);
+
+// ✅ Auto Role beim Join
+client.on(Events.GuildMemberAdd, handleAutoRole);
 
 client.login(token).catch((error) => {
   console.error('Discord login failed:', error);
