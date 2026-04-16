@@ -6,6 +6,7 @@ import {
   EmbedBuilder,
   Interaction,
   PermissionFlagsBits,
+  GuildMember,
 } from 'discord.js';
 
 const TICKET_CATEGORY_ID = '1494310963665567784';
@@ -32,12 +33,16 @@ export async function handleInteraction(interaction: Interaction) {
         }
 
         const member = interaction.member;
-        const hasPermission =
-          member &&
-          typeof member !== 'string' &&
-          member.permissions.has(PermissionFlagsBits.ManageGuild);
 
-        if (!hasPermission) {
+        if (!(member instanceof GuildMember)) {
+          await interaction.reply({
+            content: 'Mitglied konnte nicht korrekt erkannt werden.',
+            ephemeral: true,
+          });
+          return;
+        }
+
+        if (!member.permissions.has(PermissionFlagsBits.ManageGuild)) {
           await interaction.reply({
             content: 'Du brauchst dafür die Berechtigung "Server verwalten".',
             ephemeral: true,
