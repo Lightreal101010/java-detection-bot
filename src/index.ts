@@ -9,7 +9,6 @@ import { registerCommands } from './commands/register.js';
 import { handleInteraction } from './handlers/interaction.js';
 import { handleMessage } from './handlers/message.js';
 import { registerLogEvents } from './handlers/logs.js';
-import { handleAutoRole } from './handlers/autorole.js';
 
 const token = process.env.DISCORD_BOT_TOKEN;
 
@@ -18,10 +17,12 @@ if (!token) {
   process.exit(1);
 }
 
+const AUTO_ROLE_ID = '1494121818854785034';
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers, // WICHTIG für AutoRole
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildModeration,
@@ -47,12 +48,17 @@ client.once(Events.ClientReady, async (readyClient) => {
   registerLogEvents(readyClient);
 });
 
-// 🔥 Events
 client.on(Events.InteractionCreate, handleInteraction);
 client.on(Events.MessageCreate, handleMessage);
 
-// ✅ Auto Role beim Join
-client.on(Events.GuildMemberAdd, handleAutoRole);
+client.on(Events.GuildMemberAdd, async (member) => {
+  try {
+    await member.roles.add(AUTO_ROLE_ID);
+    console.log(`Auto role added to ${member.user.tag}`);
+  } catch (error) {
+    console.error('Auto role error:', error);
+  }
+});
 
 client.login(token).catch((error) => {
   console.error('Discord login failed:', error);
