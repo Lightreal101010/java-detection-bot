@@ -12,7 +12,7 @@ import {
 
 const TICKET_CATEGORY_ID = '1494310963665567784';
 const TICKET_LOG_CHANNEL_ID = '1494310988445388822';
-const STAFF_ROLE_ID = '1494121818854785034';
+const STAFF_ROLE_ID = '1494121721513381908';
 
 async function sendTicketLog(guild: any, embed: EmbedBuilder) {
   const channel = await guild.channels.fetch(TICKET_LOG_CHANNEL_ID).catch(() => null);
