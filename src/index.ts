@@ -8,6 +8,7 @@ import { registerCommands } from './commands/register.js';
 import { handleInteraction } from './handlers/interaction.js';
 import { handleMessage } from './handlers/message.js';
 import { registerLogEvents } from './handlers/logs.js';
+import { handleAutoRole } from './handlers/autorole.js';
 
 process.on('unhandledRejection', (reason) => {
   console.error('UNHANDLED REJECTION:', reason);
@@ -15,10 +16,6 @@ process.on('unhandledRejection', (reason) => {
 
 process.on('uncaughtException', (error) => {
   console.error('UNCAUGHT EXCEPTION:', error);
-});
-
-process.on('SIGTERM', () => {
-  console.error('Process received SIGTERM');
 });
 
 const token = process.env.DISCORD_BOT_TOKEN;
@@ -54,16 +51,12 @@ client.once(Events.ClientReady, async (readyClient) => {
     console.error('Failed to register slash commands:', error);
   }
 
-  try {
-    registerLogEvents(readyClient);
-    console.log('Log events registered');
-  } catch (error) {
-    console.error('Failed to register log events:', error);
-  }
+  registerLogEvents(readyClient);
 });
 
 client.on(Events.InteractionCreate, handleInteraction);
 client.on(Events.MessageCreate, handleMessage);
+client.on(Events.GuildMemberAdd, handleAutoRole);
 
 client.login(token).catch((error) => {
   console.error('Discord login failed:', error);
