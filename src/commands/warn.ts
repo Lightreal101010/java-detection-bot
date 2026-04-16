@@ -1,73 +1,53 @@
-import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  EmbedBuilder,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+} from 'discord.js';
 
-const warnings = new Map<string, { reason: string; moderator: string; date: Date }[]>();
+const warnings = new Map<string, { moderator: string; reason: string; timestamp: number }[]>();
 
-function getKey(guildId: string, userId: string) {
-  return `${guildId}-${userId}`;
-}
-
-export async function handleWarn(interaction: ChatInputCommandInteraction) {
+async function handleWarn(interaction: ChatInputCommandInteraction) {
   const user = interaction.options.getUser('user', true);
   const reason = interaction.options.getString('reason', true);
-  const guild = interaction.guild;
-  if (!guild) return interaction.reply({ content: 'Server only.', ephemeral: true });
 
-  const key = getKey(guild.id, user.id);
-  const userWarnings = warnings.get(key) || [];
-  userWarnings.push({ reason, moderator: interaction.user.tag, date: new Date() });
-  warnings.set(key, userWarnings);
+  const list = warnings.get(user.id) || [];
+  list.push({
+    moderator: interaction.user.tag,
+    reason,
+    timestamp: Date.now(),
+  });
+  warnings.set(user.id, list);
 
   const embed = new EmbedBuilder()
-    .setColor(0xffcc00)
+    .setColor(0xff6600)
     .setTitle('User Warned')
     .addFields(
-      { name: 'User', value: `${user.tag}`, inline: true },
-      { name: 'Warning #', value: `${userWarnings.length}`, inline: true },
-      { name: 'Moderator', value: `${interaction.user}`, inline: true },
-      { name: 'Reason', value: reason }
+      { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
+      { name: 'Moderator', value: interaction.user.tag, inline: true },
+      { name: 'Total Warnings', value: `${list.length}`, inline: true },
+      { name: 'Reason', value: reason },
     )
     .setTimestamp();
 
   await interaction.reply({ embeds: [embed] });
-
-  try {
-    await user.send(`You have been warned in **${guild.name}**.\nReason: ${reason}\nTotal warnings: ${userWarnings.length}`);
-  } catch {}
 }
 
-export async function handleWarnings(interaction: ChatInputCommandInteraction) {
-  const user = interaction.options.getUser('user', true);
-  const guild = interaction.guild;
-  if (!guild) return interaction.reply({ content: 'Server only.', ephemeral: true });
+export { handleWarn, warnings };
 
-  const key = getKey(guild.id, user.id);
-  const userWarnings = warnings.get(key) || [];
-
-  if (userWarnings.length === 0) {
-    return interaction.reply({ content: `${user.tag} has no warnings.`, ephemeral: true });
-  }
-
-  const embed = new EmbedBuilder()
-    .setColor(0xffcc00)
-    .setTitle(`Warnings for ${user.tag}`)
-    .setDescription(
-      userWarnings
-        .map((w, i) => `**#${i + 1}** — ${w.reason}\nBy: ${w.moderator} | ${w.date.toLocaleDateString()}`)
-        .join('\n\n')
+export default {
+  data: new SlashCommandBuilder()
+    .setName('warn')
+    .setDescription('Warn a user')
+    .addUserOption((option) =>
+      option.setName('user').setDescription('User to warn').setRequired(true),
     )
-    .setFooter({ text: `Total: ${userWarnings.length} warning(s)` })
-    .setTimestamp();
+    .addStringOption((option) =>
+      option.setName('reason').setDescription('Reason').setRequired(true),
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
-  await interaction.reply({ embeds: [embed] });
-}
-
-export async function handleClearWarnings(interaction: ChatInputCommandInteraction) {
-  const user = interaction.options.getUser('user', true);
-  const guild = interaction.guild;
-  if (!guild) return interaction.reply({ content: 'Server only.', ephemeral: true });
-
-  const key = getKey(guild.id, user.id);
-  warnings.delete(key);
-
-  await interaction.reply({ content: `All warnings cleared for ${user.tag}.` });
-}
+  async execute(interaction: ChatInputCommandInteraction) {
+    await handleWarn(interaction);
+  },
+};
