@@ -10,14 +10,6 @@ import { handleMessage } from './handlers/message.js';
 import { registerLogEvents } from './handlers/logs.js';
 import { handleAutoRole } from './handlers/autorole.js';
 
-process.on('unhandledRejection', (reason) => {
-  console.error('UNHANDLED REJECTION:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('UNCAUGHT EXCEPTION:', error);
-});
-
 const token = process.env.DISCORD_BOT_TOKEN;
 
 if (!token) {
