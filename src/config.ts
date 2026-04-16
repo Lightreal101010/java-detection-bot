@@ -1,8 +1,10 @@
-export const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
-export const OPENAI_API_KEY = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || '';
-export const OPENAI_BASE_URL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1';
+export const CONFIG = {
+  discordToken: process.env.DISCORD_BOT_TOKEN || '',
+  openAiApiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || '',
+  openAiBaseUrl: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1',
 
-export const TICKET_CATEGORY_ID = '1494310963665567784';
-export const TICKET_LOG_CHANNEL_ID = '1494310988445388822';
-export const MOD_LOG_CHANNEL_ID = '1494311113452687391';
-export const AUTO_ROLE_ID = '1494121818854785034';
+  ticketCategoryId: '1494310963665567784',
+  ticketLogChannelId: '1494310988445388822',
+  modLogChannelId: '1494311113452687391',
+  autoRoleId: '1494121818854785034',
+};
