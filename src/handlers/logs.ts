@@ -127,7 +127,7 @@ export function registerLogEvents(client: Client) {
     );
   });
 
-  client.on(Events.RoleCreate, async (role) => {
+  client.on('roleCreate', async (role) => {
     await sendLog(
       role.guild,
       new EmbedBuilder()
@@ -136,7 +136,7 @@ export function registerLogEvents(client: Client) {
     );
   });
 
-  client.on(Events.RoleDelete, async (role) => {
+  client.on('roleDelete', async (role) => {
     await sendLog(
       role.guild,
       new EmbedBuilder()
