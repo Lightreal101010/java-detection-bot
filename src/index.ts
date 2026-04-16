@@ -1,13 +1,13 @@
 import {
   Client,
+  Events,
   GatewayIntentBits,
   Partials,
-  Events,
 } from 'discord.js';
 import { registerCommands } from './commands/register.js';
 import { handleInteraction } from './handlers/interaction.js';
 import { handleMessage } from './handlers/message.js';
-import { handleGuildMemberAdd } from './handlers/welcome.js';
+import { registerLogEvents } from './handlers/logs.js';
 
 const token = process.env.DISCORD_BOT_TOKEN;
 
@@ -22,33 +22,33 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildModeration,
   ],
   partials: [
     Partials.Channel,
     Partials.Message,
     Partials.GuildMember,
+    Partials.User,
   ],
 });
 
 client.once(Events.ClientReady, async (readyClient) => {
-  console.log(`Bot is online as ${readyClient.user.tag}`);
-  console.log(`Serving ${readyClient.guilds.cache.size} guild(s)`);
+  console.log(`Bot online as ${readyClient.user.tag}`);
 
   try {
     await registerCommands(readyClient);
-    console.log('Slash commands registered successfully');
-  } catch (err) {
-    console.error('Failed to register commands:', err);
+    console.log('Slash commands registered');
+  } catch (error) {
+    console.error('Failed to register slash commands:', error);
   }
+
+  registerLogEvents(readyClient);
 });
 
 client.on(Events.InteractionCreate, handleInteraction);
 client.on(Events.MessageCreate, handleMessage);
-client.on(Events.GuildMemberAdd, handleGuildMemberAdd);
 
-client.login(token).catch((err) => {
-  console.error('Discord login failed:', err);
+client.login(token).catch((error) => {
+  console.error('Login failed:', error);
   process.exit(1);
 });
