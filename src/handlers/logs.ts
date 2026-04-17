@@ -10,14 +10,15 @@ import {
 } from 'discord.js';
 import { CONFIG } from '../config.js';
 
-type LogChannelKey =
+export type LogChannelKey =
   | 'join-logs'
   | 'message-logs'
   | 'moderation-logs'
   | 'channel-logs'
   | 'role-logs'
   | 'audit-logs'
-  | 'ticket-logs';
+  | 'ticket-logs'
+  | 'protection-logs';
 
 const channelCache = new Map<string, string>();
 
@@ -95,6 +96,7 @@ export async function ensureLogChannels(guild: Guild) {
     'role-logs',
     'audit-logs',
     'ticket-logs',
+    'protection-logs',
   ];
 
   for (const name of channelNames) {
@@ -108,6 +110,21 @@ export async function sendTicketLog(guild: Guild, payload: any) {
   await channel.send(payload).catch((error) => {
     console.error('Failed to send ticket log:', error);
   });
+}
+
+export async function sendProtectionLog(
+  guild: Guild,
+  title: string,
+  description: string,
+) {
+  await sendLog(
+    guild,
+    'protection-logs',
+    new EmbedBuilder()
+      .setTitle(title)
+      .setDescription(description)
+      .setTimestamp(),
+  );
 }
 
 export function registerLogEvents(client: Client) {
