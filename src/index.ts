@@ -7,7 +7,11 @@ import {
 
 import { registerCommands } from './commands/register.js';
 import { handleInteraction } from './handlers/interaction.js';
-import { registerLogEvents, ensureLogChannels, sendTicketLog } from './handlers/logs.js';
+import {
+  registerLogEvents,
+  ensureLogChannels,
+  sendProtectionLog,
+} from './handlers/logs.js';
 import { CONFIG } from './config.js';
 
 const token = process.env.DISCORD_BOT_TOKEN;
@@ -37,21 +41,6 @@ const client = new Client({
   ],
 });
 
-async function sendProtectionLog(guildId: string, title: string, description: string) {
-  const guild = client.guilds.cache.get(guildId);
-  if (!guild) return;
-
-  await sendTicketLog(guild, {
-    embeds: [
-      {
-        title,
-        description,
-        timestamp: new Date().toISOString(),
-      },
-    ],
-  }).catch(() => null);
-}
-
 function containsInviteLink(content: string) {
   return /(?:discord\.gg|discord\.com\/invite)\/[A-Za-z0-9-]+/i.test(content);
 }
@@ -73,6 +62,10 @@ client.once(Events.ClientReady, async (readyClient) => {
   registerLogEvents(readyClient);
 });
 
+client.on(Events.GuildCreate, async (guild) => {
+  await ensureLogChannels(guild);
+});
+
 client.on(Events.InteractionCreate, handleInteraction);
 
 client.on(Events.GuildMemberAdd, async (member) => {
@@ -85,7 +78,6 @@ client.on(Events.GuildMemberAdd, async (member) => {
 
   const now = Date.now();
 
-  // Raid join tracking
   const joins = recentJoins.get(member.guild.id) ?? [];
   const filteredJoins = joins.filter((ts) => now - ts <= 15000);
   filteredJoins.push(now);
@@ -93,19 +85,18 @@ client.on(Events.GuildMemberAdd, async (member) => {
 
   if (filteredJoins.length >= 6) {
     await sendProtectionLog(
-      member.guild.id,
+      member.guild,
       '⚠️ Raid Warning',
       `Possible raid detected.\n**Joins in 15s:** ${filteredJoins.length}\n**Latest user:** ${member.user.tag} (${member.user.id})`,
     );
   }
 
-  // New account warning
   const accountAgeMs = now - member.user.createdTimestamp;
   const oneDay = 24 * 60 * 60 * 1000;
 
   if (accountAgeMs < oneDay) {
     await sendProtectionLog(
-      member.guild.id,
+      member.guild,
       '🆕 New Account Joined',
       `A very new account joined the server.\n**User:** ${member.user.tag}\n**User ID:** ${member.user.id}\n**Created:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:F>`,
     );
@@ -118,7 +109,6 @@ client.on(Events.MessageCreate, async (message) => {
   const now = Date.now();
   const userKey = `${message.guild.id}:${message.author.id}`;
 
-  // Spam detection
   const spamTimestamps = recentMessages.get(userKey) ?? [];
   const filteredSpam = spamTimestamps.filter((ts) => now - ts <= 5000);
   filteredSpam.push(now);
@@ -126,13 +116,12 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (filteredSpam.length >= 7) {
     await sendProtectionLog(
-      message.guild.id,
+      message.guild,
       '🚨 Spam Warning',
       `Possible spam detected.\n**User:** ${message.author.tag} (${message.author.id})\n**Channel:** ${message.channel}\n**Messages in 5s:** ${filteredSpam.length}`,
     );
   }
 
-  // Duplicate spam detection
   const normalizedContent = message.content.trim().toLowerCase();
   if (normalizedContent) {
     const dupeEntry = duplicateMessages.get(userKey) ?? { content: '', timestamps: [] };
@@ -149,32 +138,29 @@ client.on(Events.MessageCreate, async (message) => {
 
     if (dupeEntry.timestamps.length >= 4) {
       await sendProtectionLog(
-        message.guild.id,
+        message.guild,
         '📢 Duplicate Message Spam',
         `Repeated message detected.\n**User:** ${message.author.tag} (${message.author.id})\n**Channel:** ${message.channel}\n**Count:** ${dupeEntry.timestamps.length}\n**Message:** ${message.content.slice(0, 500) || 'No content'}`,
       );
     }
   }
 
-  // Everyone / here mention detection
   if (message.mentions.everyone) {
     await sendProtectionLog(
-      message.guild.id,
+      message.guild,
       '⚠️ Mass Mention Warning',
       `A mass mention was used.\n**User:** ${message.author.tag} (${message.author.id})\n**Channel:** ${message.channel}\n**Content:** ${message.content.slice(0, 500) || 'No content'}`,
     );
   }
 
-  // Invite link detection
   if (containsInviteLink(message.content)) {
     await sendProtectionLog(
-      message.guild.id,
+      message.guild,
       '🔗 Invite Link Detected',
       `An invite link was posted.\n**User:** ${message.author.tag} (${message.author.id})\n**Channel:** ${message.channel}\n**Content:** ${message.content.slice(0, 500)}`,
     );
   }
 
-  // Excessive caps warning
   const lettersOnly = message.content.replace(/[^a-zA-Z]/g, '');
   if (lettersOnly.length >= 12) {
     const upper = [...lettersOnly].filter((c) => c === c.toUpperCase()).length;
@@ -182,16 +168,12 @@ client.on(Events.MessageCreate, async (message) => {
 
     if (ratio >= 0.8) {
       await sendProtectionLog(
-        message.guild.id,
+        message.guild,
         '🔊 Excessive Caps Warning',
         `Possible shouting / caps spam detected.\n**User:** ${message.author.tag} (${message.author.id})\n**Channel:** ${message.channel}\n**Content:** ${message.content.slice(0, 500)}`,
       );
     }
   }
-});
-
-client.on(Events.GuildCreate, async (guild) => {
-  await ensureLogChannels(guild);
 });
 
 client.login(token).catch((error) => {
