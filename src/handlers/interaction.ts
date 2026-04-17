@@ -8,16 +8,10 @@ import {
   Interaction,
   PermissionFlagsBits,
   StringSelectMenuBuilder,
-  escapeMarkdown,
 } from 'discord.js';
 import { CONFIG } from '../config.js';
 import { getSlashCommand } from '../commands/registry.js';
-
-async function sendTicketLog(guild: any, payload: any) {
-  const channel = await guild.channels.fetch(CONFIG.TICKET_LOG_CHANNEL_ID).catch(() => null);
-  if (!channel || !channel.isSendable()) return;
-  await channel.send(payload).catch(() => null);
-}
+import { sendTicketLog } from './logs.js';
 
 function prettyType(type: string) {
   switch (type) {
@@ -127,7 +121,7 @@ async function buildTranscriptHtml(channel: any) {
     padding: 24px;
   }
   .wrap {
-    max-width: 1000px;
+    max-width: 980px;
     margin: 0 auto;
   }
   .header {
@@ -141,9 +135,10 @@ async function buildTranscriptHtml(channel: any) {
     margin: 0 0 8px 0;
     font-size: 22px;
   }
-  .header .sub {
+  .sub {
     color: #aeb7c5;
     font-size: 14px;
+    margin-top: 4px;
   }
   .message {
     background: #171a21;
@@ -165,7 +160,6 @@ async function buildTranscriptHtml(channel: any) {
     font-weight: bold;
   }
   .content {
-    white-space: normal;
     line-height: 1.5;
     word-break: break-word;
   }
@@ -350,11 +344,9 @@ export async function handleInteraction(interaction: Interaction) {
 
       const ownerId = getTicketOwnerIdFromName(channel.name);
       const ticketType = getTicketTypeFromName(channel.name);
-
       const transcriptHtml = await buildTranscriptHtml(channel);
-      const transcriptBuffer = Buffer.from(transcriptHtml, 'utf-8');
 
-      const transcriptFileForLog = new AttachmentBuilder(Buffer.from(transcriptHtml, 'utf-8'), {
+      const logFile = new AttachmentBuilder(Buffer.from(transcriptHtml, 'utf-8'), {
         name: `${channel.name}-transcript.html`,
       });
 
@@ -369,20 +361,19 @@ export async function handleInteraction(interaction: Interaction) {
               `**Type:** ${prettyType(ticketType)}`
             ),
         ],
-        files: [transcriptFileForLog],
+        files: [logFile],
       });
 
       if (ownerId) {
         const ownerUser = await interaction.client.users.fetch(ownerId).catch(() => null);
-
         if (ownerUser) {
-          const transcriptFileForDm = new AttachmentBuilder(transcriptBuffer, {
+          const dmFile = new AttachmentBuilder(Buffer.from(transcriptHtml, 'utf-8'), {
             name: `${channel.name}-transcript.html`,
           });
 
           await ownerUser.send({
             content: `Here is the transcript for your closed ticket **${channel.name}**.`,
-            files: [transcriptFileForDm],
+            files: [dmFile],
           }).catch(() => null);
         }
       }
@@ -390,8 +381,6 @@ export async function handleInteraction(interaction: Interaction) {
       setTimeout(async () => {
         await channel.delete().catch(() => null);
       }, 3000);
-
-      return;
     }
   } catch (error) {
     console.error('Interaction handler error:', error);
