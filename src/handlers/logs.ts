@@ -1,24 +1,79 @@
 import {
   AuditLogEvent,
+  ChannelType,
   Client,
   EmbedBuilder,
   Events,
   Guild,
+  GuildBasedChannel,
+  GuildMember,
+  Message,
+  TextChannel,
 } from 'discord.js';
+import { CONFIG } from '../config.js';
 
-const MOD_LOG_CHANNEL_ID = '1494311113452687391';
+async function getOrCreateLogChannel(guild: Guild): Promise<TextChannel | null> {
+  const existing = guild.channels.cache.find(
+    (channel) =>
+      channel.type === ChannelType.GuildText &&
+      channel.name === CONFIG.LOG_CHANNEL_NAME &&
+      channel.parentId === CONFIG.LOG_CATEGORY_ID,
+  ) as TextChannel | undefined;
 
-async function sendLog(guild: Guild, embed: EmbedBuilder) {
-  const channel = await guild.channels.fetch(MOD_LOG_CHANNEL_ID).catch(() => null);
-  if (!channel) return;
-  if (!channel.isSendable()) return;
+  if (existing) return existing;
 
-  await channel.send({ embeds: [embed] }).catch(() => null);
+  const fetchedCategory = await guild.channels.fetch(CONFIG.LOG_CATEGORY_ID).catch(() => null);
+  if (!fetchedCategory || fetchedCategory.type !== ChannelType.GuildCategory) {
+    console.error(`Log category not found: ${CONFIG.LOG_CATEGORY_ID}`);
+    return null;
+  }
+
+  const created = await guild.channels.create({
+    name: CONFIG.LOG_CHANNEL_NAME,
+    type: ChannelType.GuildText,
+    parent: CONFIG.LOG_CATEGORY_ID,
+  }).catch((error) => {
+    console.error('Failed to create log channel:', error);
+    return null;
+  });
+
+  if (!created || created.type !== ChannelType.GuildText) return null;
+  return created;
 }
 
-function safeContent(content: string | null | undefined, max = 900) {
-  if (!content) return 'Kein Inhalt';
-  return content.length > max ? `${content.slice(0, max)}...` : content;
+async function sendLog(guild: Guild, embed: EmbedBuilder) {
+  const channel = await getOrCreateLogChannel(guild);
+  if (!channel || !channel.isSendable()) return;
+  await channel.send({ embeds: [embed] }).catch((error) => {
+    console.error('Failed to send log message:', error);
+  });
+}
+
+function shorten(text: string | null | undefined, max = 1000) {
+  if (!text) return 'No content';
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function channelLabel(channel: GuildBasedChannel | Message['channel']) {
+  if ('toString' in channel) return channel.toString();
+  return 'Unknown channel';
+}
+
+export async function ensureLogChannel(guild: Guild) {
+  await getOrCreateLogChannel(guild);
+}
+
+async function logKickFromAudit(guild: Guild, targetId: string | null, executorTag: string | null) {
+  await sendLog(
+    guild,
+    new EmbedBuilder()
+      .setTitle('👢 Member Kicked')
+      .setDescription(
+        `**Target ID:** ${targetId ?? 'Unknown'}\n` +
+        `**Moderator:** ${executorTag ?? 'Unknown'}`
+      )
+      .setTimestamp(),
+  );
 }
 
 export function registerLogEvents(client: Client) {
@@ -27,7 +82,13 @@ export function registerLogEvents(client: Client) {
       member.guild,
       new EmbedBuilder()
         .setTitle('✅ Member Joined')
-        .setDescription(`${member.user.tag} ist dem Server beigetreten.`),
+        .addFields(
+          { name: 'User', value: `${member.user.tag}`, inline: true },
+          { name: 'User ID', value: member.user.id, inline: true },
+          { name: 'Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:F>` },
+        )
+        .setThumbnail(member.user.displayAvatarURL())
+        .setTimestamp(),
     );
   });
 
@@ -36,70 +97,119 @@ export function registerLogEvents(client: Client) {
       member.guild,
       new EmbedBuilder()
         .setTitle('❌ Member Left')
-        .setDescription(`${member.user.tag} hat den Server verlassen.`),
+        .addFields(
+          { name: 'User', value: `${member.user.tag}`, inline: true },
+          { name: 'User ID', value: member.user.id, inline: true },
+        )
+        .setThumbnail(member.user.displayAvatarURL())
+        .setTimestamp(),
     );
   });
 
-  client.on(Events.MessageDelete, async (message) => {
-    if (!message.guild) return;
-    if (message.author?.bot) return;
+  client.on(Events.GuildMemberUpdate, async (oldMember: GuildMember, newMember: GuildMember) => {
+    if (oldMember.nickname !== newMember.nickname) {
+      await sendLog(
+        newMember.guild,
+        new EmbedBuilder()
+          .setTitle('📝 Nickname Updated')
+          .addFields(
+            { name: 'User', value: `${newMember.user.tag}`, inline: true },
+            { name: 'User ID', value: newMember.user.id, inline: true },
+            { name: 'Before', value: oldMember.nickname ?? 'None' },
+            { name: 'After', value: newMember.nickname ?? 'None' },
+          )
+          .setThumbnail(newMember.user.displayAvatarURL())
+          .setTimestamp(),
+      );
+    }
+
+    const oldRoles = oldMember.roles.cache.filter((r) => r.id !== newMember.guild.id);
+    const newRoles = newMember.roles.cache.filter((r) => r.id !== newMember.guild.id);
+
+    const addedRoles = newRoles.filter((r) => !oldRoles.has(r.id));
+    const removedRoles = oldRoles.filter((r) => !newRoles.has(r.id));
+
+    if (addedRoles.size > 0 || removedRoles.size > 0) {
+      await sendLog(
+        newMember.guild,
+        new EmbedBuilder()
+          .setTitle('🎭 Member Roles Updated')
+          .addFields(
+            { name: 'User', value: `${newMember.user.tag}`, inline: true },
+            { name: 'User ID', value: newMember.user.id, inline: true },
+            {
+              name: 'Added Roles',
+              value: addedRoles.size ? addedRoles.map((r) => r.toString()).join(', ') : 'None',
+            },
+            {
+              name: 'Removed Roles',
+              value: removedRoles.size ? removedRoles.map((r) => r.toString()).join(', ') : 'None',
+            },
+          )
+          .setThumbnail(newMember.user.displayAvatarURL())
+          .setTimestamp(),
+      );
+    }
+  });
+
+  client.on(Events.UserUpdate, async (oldUser, newUser) => {
+    if (oldUser.username === newUser.username) return;
+
+    const guilds = client.guilds.cache.filter((g) => g.members.cache.has(newUser.id));
+    for (const [, guild] of guilds) {
+      await sendLog(
+        guild,
+        new EmbedBuilder()
+          .setTitle('👤 Username Updated')
+          .addFields(
+            { name: 'User ID', value: newUser.id, inline: true },
+            { name: 'Before', value: oldUser.username, inline: true },
+            { name: 'After', value: newUser.username, inline: true },
+          )
+          .setThumbnail(newUser.displayAvatarURL())
+          .setTimestamp(),
+      );
+    }
+  });
+
+  client.on(Events.MessageDelete, async (message: Message) => {
+    if (!message.guild || message.author?.bot) return;
 
     await sendLog(
       message.guild,
       new EmbedBuilder()
-        .setTitle('🗑️ Nachricht gelöscht')
+        .setTitle('🗑️ Message Deleted')
         .addFields(
-          {
-            name: 'User',
-            value: message.author ? message.author.tag : 'Unbekannt',
-            inline: true,
-          },
-          {
-            name: 'Channel',
-            value: message.channel.toString(),
-            inline: true,
-          },
-          {
-            name: 'Inhalt',
-            value: safeContent(message.content),
-          },
-        ),
+          { name: 'User', value: message.author?.tag ?? 'Unknown', inline: true },
+          { name: 'User ID', value: message.author?.id ?? 'Unknown', inline: true },
+          { name: 'Channel', value: channelLabel(message.channel), inline: true },
+          { name: 'Content', value: shorten(message.content) },
+        )
+        .setTimestamp(),
     );
   });
 
   client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
-    if (!newMessage.guild) return;
-    if (newMessage.author?.bot) return;
+    if (!newMessage.guild || newMessage.author?.bot) return;
 
-    const oldContent = oldMessage.content ?? null;
-    const newContent = newMessage.content ?? null;
+    const before = oldMessage.content ?? null;
+    const after = newMessage.content ?? null;
 
-    if (oldContent === newContent) return;
+    if (before === after) return;
 
     await sendLog(
       newMessage.guild,
       new EmbedBuilder()
-        .setTitle('✏️ Nachricht bearbeitet')
+        .setTitle('✏️ Message Edited')
         .addFields(
-          {
-            name: 'User',
-            value: newMessage.author ? newMessage.author.tag : 'Unbekannt',
-            inline: true,
-          },
-          {
-            name: 'Channel',
-            value: newMessage.channel.toString(),
-            inline: true,
-          },
-          {
-            name: 'Alt',
-            value: safeContent(oldContent),
-          },
-          {
-            name: 'Neu',
-            value: safeContent(newContent),
-          },
-        ),
+          { name: 'User', value: newMessage.author?.tag ?? 'Unknown', inline: true },
+          { name: 'User ID', value: newMessage.author?.id ?? 'Unknown', inline: true },
+          { name: 'Channel', value: channelLabel(newMessage.channel), inline: true },
+          { name: 'Before', value: shorten(before) },
+          { name: 'After', value: shorten(after) },
+          { name: 'Message Link', value: newMessage.url || 'Unavailable' },
+        )
+        .setTimestamp(),
     );
   });
 
@@ -109,8 +219,14 @@ export function registerLogEvents(client: Client) {
     await sendLog(
       channel.guild,
       new EmbedBuilder()
-        .setTitle('📁 Channel erstellt')
-        .setDescription(`Channel: ${channel.toString()}`),
+        .setTitle('📁 Channel Created')
+        .addFields(
+          { name: 'Name', value: channel.name, inline: true },
+          { name: 'Channel ID', value: channel.id, inline: true },
+          { name: 'Type', value: `${channel.type}`, inline: true },
+          { name: 'Category ID', value: channel.parentId ?? 'None' },
+        )
+        .setTimestamp(),
     );
   });
 
@@ -120,8 +236,13 @@ export function registerLogEvents(client: Client) {
     await sendLog(
       channel.guild,
       new EmbedBuilder()
-        .setTitle('🗑️ Channel gelöscht')
-        .setDescription(`Name: ${'name' in channel ? channel.name : 'Unbekannt'}`),
+        .setTitle('🗑️ Channel Deleted')
+        .addFields(
+          { name: 'Name', value: channel.name, inline: true },
+          { name: 'Channel ID', value: channel.id, inline: true },
+          { name: 'Type', value: `${channel.type}`, inline: true },
+        )
+        .setTimestamp(),
     );
   });
 
@@ -129,8 +250,13 @@ export function registerLogEvents(client: Client) {
     await sendLog(
       role.guild,
       new EmbedBuilder()
-        .setTitle('➕ Rolle erstellt')
-        .setDescription(`Rolle: ${role.name}`),
+        .setTitle('➕ Role Created')
+        .addFields(
+          { name: 'Role', value: role.name, inline: true },
+          { name: 'Role ID', value: role.id, inline: true },
+          { name: 'Color', value: role.hexColor, inline: true },
+        )
+        .setTimestamp(),
     );
   });
 
@@ -138,8 +264,12 @@ export function registerLogEvents(client: Client) {
     await sendLog(
       role.guild,
       new EmbedBuilder()
-        .setTitle('➖ Rolle gelöscht')
-        .setDescription(`Rolle: ${role.name}`),
+        .setTitle('➖ Role Deleted')
+        .addFields(
+          { name: 'Role', value: role.name, inline: true },
+          { name: 'Role ID', value: role.id, inline: true },
+        )
+        .setTimestamp(),
     );
   });
 
@@ -147,8 +277,13 @@ export function registerLogEvents(client: Client) {
     await sendLog(
       ban.guild,
       new EmbedBuilder()
-        .setTitle('🔨 User gebannt')
-        .setDescription(`User: ${ban.user.tag}`),
+        .setTitle('🔨 User Banned')
+        .addFields(
+          { name: 'User', value: ban.user.tag, inline: true },
+          { name: 'User ID', value: ban.user.id, inline: true },
+        )
+        .setThumbnail(ban.user.displayAvatarURL())
+        .setTimestamp(),
     );
   });
 
@@ -156,22 +291,58 @@ export function registerLogEvents(client: Client) {
     await sendLog(
       ban.guild,
       new EmbedBuilder()
-        .setTitle('🔓 Ban entfernt')
-        .setDescription(`User: ${ban.user.tag}`),
+        .setTitle('🔓 Ban Removed')
+        .addFields(
+          { name: 'User', value: ban.user.tag, inline: true },
+          { name: 'User ID', value: ban.user.id, inline: true },
+        )
+        .setThumbnail(ban.user.displayAvatarURL())
+        .setTimestamp(),
     );
   });
 
   client.on(Events.GuildAuditLogEntryCreate, async (entry, guild) => {
-    if (entry.action !== AuditLogEvent.MemberKick) return;
+    if (entry.action === AuditLogEvent.MemberKick) {
+      await logKickFromAudit(guild, entry.targetId ?? null, entry.executor?.tag ?? null);
+    }
 
-    await sendLog(
-      guild,
-      new EmbedBuilder()
-        .setTitle('👢 User gekickt')
-        .setDescription(
-          `Target: ${entry.targetId ?? 'Unbekannt'}\n` +
-          `Von: ${entry.executor?.tag ?? 'Unbekannt'}`
-        ),
-    );
+    if (entry.action === AuditLogEvent.MemberRoleUpdate) {
+      await sendLog(
+        guild,
+        new EmbedBuilder()
+          .setTitle('🛡️ Audit Log: Member Role Update')
+          .addFields(
+            { name: 'Target ID', value: entry.targetId ?? 'Unknown', inline: true },
+            { name: 'Executor', value: entry.executor?.tag ?? 'Unknown', inline: true },
+          )
+          .setTimestamp(),
+      );
+    }
+
+    if (entry.action === AuditLogEvent.ChannelCreate) {
+      await sendLog(
+        guild,
+        new EmbedBuilder()
+          .setTitle('📘 Audit Log: Channel Created')
+          .addFields(
+            { name: 'Executor', value: entry.executor?.tag ?? 'Unknown', inline: true },
+            { name: 'Target ID', value: entry.targetId ?? 'Unknown', inline: true },
+          )
+          .setTimestamp(),
+      );
+    }
+
+    if (entry.action === AuditLogEvent.ChannelDelete) {
+      await sendLog(
+        guild,
+        new EmbedBuilder()
+          .setTitle('📕 Audit Log: Channel Deleted')
+          .addFields(
+            { name: 'Executor', value: entry.executor?.tag ?? 'Unknown', inline: true },
+            { name: 'Target ID', value: entry.targetId ?? 'Unknown', inline: true },
+          )
+          .setTimestamp(),
+      );
+    }
   });
 }
