@@ -1,22 +1,45 @@
-import { ChatInputCommandInteraction, TextChannel, EmbedBuilder } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+  MessageFlags,
+} from 'discord.js';
 
-export async function handleClear(interaction: ChatInputCommandInteraction) {
-  const amount = interaction.options.getInteger('amount', true);
-  const channel = interaction.channel;
+export default {
+  data: new SlashCommandBuilder()
+    .setName('clear')
+    .setDescription('Delete a number of messages')
+    .addIntegerOption((option) =>
+      option
+        .setName('amount')
+        .setDescription('How many messages to delete (1-100)')
+        .setRequired(true),
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
 
-  if (!channel || !(channel instanceof TextChannel)) {
-    return interaction.reply({ content: 'This command can only be used in text channels.', ephemeral: true });
-  }
+  async execute(interaction: ChatInputCommandInteraction) {
+    const amount = interaction.options.getInteger('amount', true);
 
-  const deleted = await channel.bulkDelete(amount, true);
+    if (!interaction.channel || !interaction.channel.isTextBased() || !('bulkDelete' in interaction.channel)) {
+      await interaction.reply({
+        content: 'This command can only be used in a text channel.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
 
-  const embed = new EmbedBuilder()
-    .setColor(0x0099ff)
-    .setTitle('Messages Cleared')
-    .setDescription(`Deleted **${deleted.size}** message(s).`)
-    .addFields({ name: 'Moderator', value: `${interaction.user}` })
-    .setTimestamp();
+    if (amount < 1 || amount > 100) {
+      await interaction.reply({
+        content: 'Amount must be between 1 and 100.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
 
-  const reply = await interaction.reply({ embeds: [embed], fetchReply: true });
-  setTimeout(() => reply.delete().catch(() => {}), 5000);
-}
+    await interaction.channel.bulkDelete(amount, true);
+    await interaction.reply({
+      content: `🧹 Deleted ${amount} messages.`,
+      flags: MessageFlags.Ephemeral,
+    });
+  },
+};
