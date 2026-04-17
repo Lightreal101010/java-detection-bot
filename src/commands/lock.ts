@@ -1,41 +1,29 @@
-import { ChatInputCommandInteraction, TextChannel, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+  MessageFlags,
+} from 'discord.js';
 
-export async function handleLock(interaction: ChatInputCommandInteraction) {
-  const channel = interaction.channel;
-  if (!channel || !(channel instanceof TextChannel)) {
-    return interaction.reply({ content: 'Text channels only.', ephemeral: true });
-  }
+export default {
+  data: new SlashCommandBuilder()
+    .setName('lock')
+    .setDescription('Lock the current channel')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
-  await channel.permissionOverwrites.edit(interaction.guild!.roles.everyone, {
-    SendMessages: false,
-  });
+  async execute(interaction: ChatInputCommandInteraction) {
+    if (!interaction.guild || !interaction.channel || !('permissionOverwrites' in interaction.channel)) {
+      await interaction.reply({
+        content: 'This command can only be used in a server channel.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
 
-  const embed = new EmbedBuilder()
-    .setColor(0xff0000)
-    .setTitle('Channel Locked')
-    .setDescription(`${channel} has been locked.`)
-    .addFields({ name: 'Moderator', value: `${interaction.user}` })
-    .setTimestamp();
+    await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
+      SendMessages: false,
+    });
 
-  await interaction.reply({ embeds: [embed] });
-}
-
-export async function handleUnlock(interaction: ChatInputCommandInteraction) {
-  const channel = interaction.channel;
-  if (!channel || !(channel instanceof TextChannel)) {
-    return interaction.reply({ content: 'Text channels only.', ephemeral: true });
-  }
-
-  await channel.permissionOverwrites.edit(interaction.guild!.roles.everyone, {
-    SendMessages: null,
-  });
-
-  const embed = new EmbedBuilder()
-    .setColor(0x00ff00)
-    .setTitle('Channel Unlocked')
-    .setDescription(`${channel} has been unlocked.`)
-    .addFields({ name: 'Moderator', value: `${interaction.user}` })
-    .setTimestamp();
-
-  await interaction.reply({ embeds: [embed] });
-}
+    await interaction.reply({ content: '🔒 Channel locked.' });
+  },
+};
