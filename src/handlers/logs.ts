@@ -10,15 +10,42 @@ import {
 } from 'discord.js';
 import { CONFIG } from '../config.js';
 
-async function getOrCreateLogChannel(guild: Guild): Promise<TextChannel | null> {
+type LogChannelKey =
+  | 'join-logs'
+  | 'message-logs'
+  | 'moderation-logs'
+  | 'channel-logs'
+  | 'role-logs'
+  | 'audit-logs'
+  | 'ticket-logs';
+
+const channelCache = new Map<string, string>();
+
+async function getOrCreateLogChannel(
+  guild: Guild,
+  channelName: LogChannelKey,
+): Promise<TextChannel | null> {
+  const cacheKey = `${guild.id}:${channelName}`;
+  const cachedId = channelCache.get(cacheKey);
+
+  if (cachedId) {
+    const cachedChannel = guild.channels.cache.get(cachedId);
+    if (cachedChannel && cachedChannel.type === ChannelType.GuildText) {
+      return cachedChannel;
+    }
+  }
+
   const existing = guild.channels.cache.find(
     (channel) =>
       channel.type === ChannelType.GuildText &&
-      channel.name === CONFIG.LOG_CHANNEL_NAME &&
+      channel.name === channelName &&
       channel.parentId === CONFIG.LOG_CATEGORY_ID,
   ) as TextChannel | undefined;
 
-  if (existing) return existing;
+  if (existing) {
+    channelCache.set(cacheKey, existing.id);
+    return existing;
+  }
 
   const category = await guild.channels.fetch(CONFIG.LOG_CATEGORY_ID).catch(() => null);
   if (!category || category.type !== ChannelType.GuildCategory) {
@@ -27,24 +54,30 @@ async function getOrCreateLogChannel(guild: Guild): Promise<TextChannel | null> 
   }
 
   const created = await guild.channels.create({
-    name: CONFIG.LOG_CHANNEL_NAME,
+    name: channelName,
     type: ChannelType.GuildText,
     parent: CONFIG.LOG_CATEGORY_ID,
   }).catch((error) => {
-    console.error('Failed to create log channel:', error);
+    console.error(`Failed to create log channel ${channelName}:`, error);
     return null;
   });
 
   if (!created || created.type !== ChannelType.GuildText) return null;
+
+  channelCache.set(cacheKey, created.id);
   return created;
 }
 
-async function sendLog(guild: Guild, embed: EmbedBuilder) {
-  const channel = await getOrCreateLogChannel(guild);
+async function sendLog(
+  guild: Guild,
+  channelName: LogChannelKey,
+  embed: EmbedBuilder,
+) {
+  const channel = await getOrCreateLogChannel(guild, channelName);
   if (!channel || !channel.isSendable()) return;
 
   await channel.send({ embeds: [embed] }).catch((error) => {
-    console.error('Failed to send log:', error);
+    console.error(`Failed to send log to ${channelName}:`, error);
   });
 }
 
@@ -53,14 +86,35 @@ function shorten(text: string | null | undefined, max = 1000) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
-export async function ensureLogChannel(guild: Guild) {
-  await getOrCreateLogChannel(guild);
+export async function ensureLogChannels(guild: Guild) {
+  const channelNames: LogChannelKey[] = [
+    'join-logs',
+    'message-logs',
+    'moderation-logs',
+    'channel-logs',
+    'role-logs',
+    'audit-logs',
+    'ticket-logs',
+  ];
+
+  for (const name of channelNames) {
+    await getOrCreateLogChannel(guild, name);
+  }
+}
+
+export async function sendTicketLog(guild: Guild, payload: any) {
+  const channel = await getOrCreateLogChannel(guild, 'ticket-logs');
+  if (!channel || !channel.isSendable()) return;
+  await channel.send(payload).catch((error) => {
+    console.error('Failed to send ticket log:', error);
+  });
 }
 
 export function registerLogEvents(client: Client) {
   client.on(Events.GuildMemberAdd, async (member) => {
     await sendLog(
       member.guild,
+      'join-logs',
       new EmbedBuilder()
         .setTitle('✅ Member Joined')
         .addFields(
@@ -76,6 +130,7 @@ export function registerLogEvents(client: Client) {
   client.on(Events.GuildMemberRemove, async (member) => {
     await sendLog(
       member.guild,
+      'join-logs',
       new EmbedBuilder()
         .setTitle('❌ Member Left')
         .addFields(
@@ -91,6 +146,7 @@ export function registerLogEvents(client: Client) {
     if (oldMember.nickname !== newMember.nickname) {
       await sendLog(
         newMember.guild,
+        'moderation-logs',
         new EmbedBuilder()
           .setTitle('📝 Nickname Updated')
           .addFields(
@@ -99,7 +155,6 @@ export function registerLogEvents(client: Client) {
             { name: 'Before', value: oldMember.nickname ?? 'None' },
             { name: 'After', value: newMember.nickname ?? 'None' },
           )
-          .setThumbnail(newMember.user.displayAvatarURL())
           .setTimestamp(),
       );
     }
@@ -113,6 +168,7 @@ export function registerLogEvents(client: Client) {
     if (addedRoles.size || removedRoles.size) {
       await sendLog(
         newMember.guild,
+        'role-logs',
         new EmbedBuilder()
           .setTitle('🎭 Roles Updated')
           .addFields(
@@ -139,6 +195,7 @@ export function registerLogEvents(client: Client) {
     for (const [, guild] of guilds) {
       await sendLog(
         guild,
+        'moderation-logs',
         new EmbedBuilder()
           .setTitle('👤 Username Updated')
           .addFields(
@@ -146,7 +203,6 @@ export function registerLogEvents(client: Client) {
             { name: 'Before', value: oldUser.username, inline: true },
             { name: 'After', value: newUser.username, inline: true },
           )
-          .setThumbnail(newUser.displayAvatarURL())
           .setTimestamp(),
       );
     }
@@ -158,6 +214,7 @@ export function registerLogEvents(client: Client) {
 
     await sendLog(
       message.guild,
+      'message-logs',
       new EmbedBuilder()
         .setTitle('🗑️ Message Deleted')
         .addFields(
@@ -176,11 +233,11 @@ export function registerLogEvents(client: Client) {
 
     const before = oldMessage.content ?? null;
     const after = newMessage.content ?? null;
-
     if (before === after) return;
 
     await sendLog(
       newMessage.guild,
+      'message-logs',
       new EmbedBuilder()
         .setTitle('✏️ Message Edited')
         .addFields(
@@ -200,6 +257,7 @@ export function registerLogEvents(client: Client) {
 
     await sendLog(
       channel.guild,
+      'channel-logs',
       new EmbedBuilder()
         .setTitle('📁 Channel Created')
         .addFields(
@@ -217,6 +275,7 @@ export function registerLogEvents(client: Client) {
 
     await sendLog(
       channel.guild,
+      'channel-logs',
       new EmbedBuilder()
         .setTitle('🗑️ Channel Deleted')
         .addFields(
@@ -231,6 +290,7 @@ export function registerLogEvents(client: Client) {
   client.on('roleCreate', async (role) => {
     await sendLog(
       role.guild,
+      'role-logs',
       new EmbedBuilder()
         .setTitle('➕ Role Created')
         .addFields(
@@ -245,6 +305,7 @@ export function registerLogEvents(client: Client) {
   client.on('roleDelete', async (role) => {
     await sendLog(
       role.guild,
+      'role-logs',
       new EmbedBuilder()
         .setTitle('➖ Role Deleted')
         .addFields(
@@ -258,13 +319,13 @@ export function registerLogEvents(client: Client) {
   client.on(Events.GuildBanAdd, async (ban) => {
     await sendLog(
       ban.guild,
+      'moderation-logs',
       new EmbedBuilder()
         .setTitle('🔨 User Banned')
         .addFields(
           { name: 'User', value: ban.user.tag, inline: true },
           { name: 'User ID', value: ban.user.id, inline: true },
         )
-        .setThumbnail(ban.user.displayAvatarURL())
         .setTimestamp(),
     );
   });
@@ -272,13 +333,13 @@ export function registerLogEvents(client: Client) {
   client.on(Events.GuildBanRemove, async (ban) => {
     await sendLog(
       ban.guild,
+      'moderation-logs',
       new EmbedBuilder()
         .setTitle('🔓 Ban Removed')
         .addFields(
           { name: 'User', value: ban.user.tag, inline: true },
           { name: 'User ID', value: ban.user.id, inline: true },
         )
-        .setThumbnail(ban.user.displayAvatarURL())
         .setTimestamp(),
     );
   });
@@ -287,6 +348,7 @@ export function registerLogEvents(client: Client) {
     if (entry.action === AuditLogEvent.MemberKick) {
       await sendLog(
         guild,
+        'audit-logs',
         new EmbedBuilder()
           .setTitle('👢 Member Kicked')
           .addFields(
@@ -300,8 +362,9 @@ export function registerLogEvents(client: Client) {
     if (entry.action === AuditLogEvent.MemberRoleUpdate) {
       await sendLog(
         guild,
+        'audit-logs',
         new EmbedBuilder()
-          .setTitle('🛡️ Audit Log: Member Role Update')
+          .setTitle('🛡️ Audit: Member Role Update')
           .addFields(
             { name: 'Target ID', value: entry.targetId ?? 'Unknown', inline: true },
             { name: 'Executor', value: entry.executor?.tag ?? 'Unknown', inline: true },
@@ -313,8 +376,9 @@ export function registerLogEvents(client: Client) {
     if (entry.action === AuditLogEvent.ChannelCreate) {
       await sendLog(
         guild,
+        'audit-logs',
         new EmbedBuilder()
-          .setTitle('📘 Audit Log: Channel Created')
+          .setTitle('📘 Audit: Channel Created')
           .addFields(
             { name: 'Executor', value: entry.executor?.tag ?? 'Unknown', inline: true },
             { name: 'Target ID', value: entry.targetId ?? 'Unknown', inline: true },
@@ -326,8 +390,9 @@ export function registerLogEvents(client: Client) {
     if (entry.action === AuditLogEvent.ChannelDelete) {
       await sendLog(
         guild,
+        'audit-logs',
         new EmbedBuilder()
-          .setTitle('📕 Audit Log: Channel Deleted')
+          .setTitle('📕 Audit: Channel Deleted')
           .addFields(
             { name: 'Executor', value: entry.executor?.tag ?? 'Unknown', inline: true },
             { name: 'Target ID', value: entry.targetId ?? 'Unknown', inline: true },
