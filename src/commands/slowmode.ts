@@ -1,21 +1,31 @@
-import { ChatInputCommandInteraction, TextChannel, EmbedBuilder } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+  MessageFlags,
+} from 'discord.js';
 
-export async function handleSlowmode(interaction: ChatInputCommandInteraction) {
-  const seconds = interaction.options.getInteger('seconds', true);
-  const channel = interaction.channel;
+export default {
+  data: new SlashCommandBuilder()
+    .setName('slowmode')
+    .setDescription('Set slowmode for the current channel')
+    .addIntegerOption((option) =>
+      option.setName('seconds').setDescription('Slowmode in seconds').setRequired(true),
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
-  if (!channel || !(channel instanceof TextChannel)) {
-    return interaction.reply({ content: 'This command can only be used in text channels.', ephemeral: true });
-  }
+  async execute(interaction: ChatInputCommandInteraction) {
+    const seconds = interaction.options.getInteger('seconds', true);
 
-  await channel.setRateLimitPerUser(seconds);
+    if (!interaction.channel || !('setRateLimitPerUser' in interaction.channel)) {
+      await interaction.reply({
+        content: 'This channel does not support slowmode.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
 
-  const embed = new EmbedBuilder()
-    .setColor(0x0099ff)
-    .setTitle('Slowmode Updated')
-    .setDescription(seconds === 0 ? 'Slowmode has been disabled.' : `Slowmode set to **${seconds}** seconds.`)
-    .addFields({ name: 'Moderator', value: `${interaction.user}` })
-    .setTimestamp();
-
-  await interaction.reply({ embeds: [embed] });
-}
+    await interaction.channel.setRateLimitPerUser(seconds);
+    await interaction.reply({ content: `🐢 Slowmode set to ${seconds} second(s).` });
+  },
+};
