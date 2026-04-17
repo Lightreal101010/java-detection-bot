@@ -5,9 +5,7 @@ import {
   EmbedBuilder,
   Events,
   Guild,
-  GuildBasedChannel,
   GuildMember,
-  Message,
   TextChannel,
 } from 'discord.js';
 import { CONFIG } from '../config.js';
@@ -22,8 +20,8 @@ async function getOrCreateLogChannel(guild: Guild): Promise<TextChannel | null> 
 
   if (existing) return existing;
 
-  const fetchedCategory = await guild.channels.fetch(CONFIG.LOG_CATEGORY_ID).catch(() => null);
-  if (!fetchedCategory || fetchedCategory.type !== ChannelType.GuildCategory) {
+  const category = await guild.channels.fetch(CONFIG.LOG_CATEGORY_ID).catch(() => null);
+  if (!category || category.type !== ChannelType.GuildCategory) {
     console.error(`Log category not found: ${CONFIG.LOG_CATEGORY_ID}`);
     return null;
   }
@@ -44,8 +42,9 @@ async function getOrCreateLogChannel(guild: Guild): Promise<TextChannel | null> 
 async function sendLog(guild: Guild, embed: EmbedBuilder) {
   const channel = await getOrCreateLogChannel(guild);
   if (!channel || !channel.isSendable()) return;
+
   await channel.send({ embeds: [embed] }).catch((error) => {
-    console.error('Failed to send log message:', error);
+    console.error('Failed to send log:', error);
   });
 }
 
@@ -54,26 +53,8 @@ function shorten(text: string | null | undefined, max = 1000) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
-function channelLabel(channel: GuildBasedChannel | Message['channel']) {
-  if ('toString' in channel) return channel.toString();
-  return 'Unknown channel';
-}
-
 export async function ensureLogChannel(guild: Guild) {
   await getOrCreateLogChannel(guild);
-}
-
-async function logKickFromAudit(guild: Guild, targetId: string | null, executorTag: string | null) {
-  await sendLog(
-    guild,
-    new EmbedBuilder()
-      .setTitle('👢 Member Kicked')
-      .setDescription(
-        `**Target ID:** ${targetId ?? 'Unknown'}\n` +
-        `**Moderator:** ${executorTag ?? 'Unknown'}`
-      )
-      .setTimestamp(),
-  );
 }
 
 export function registerLogEvents(client: Client) {
@@ -129,11 +110,11 @@ export function registerLogEvents(client: Client) {
     const addedRoles = newRoles.filter((r) => !oldRoles.has(r.id));
     const removedRoles = oldRoles.filter((r) => !newRoles.has(r.id));
 
-    if (addedRoles.size > 0 || removedRoles.size > 0) {
+    if (addedRoles.size || removedRoles.size) {
       await sendLog(
         newMember.guild,
         new EmbedBuilder()
-          .setTitle('🎭 Member Roles Updated')
+          .setTitle('🎭 Roles Updated')
           .addFields(
             { name: 'User', value: `${newMember.user.tag}`, inline: true },
             { name: 'User ID', value: newMember.user.id, inline: true },
@@ -146,7 +127,6 @@ export function registerLogEvents(client: Client) {
               value: removedRoles.size ? removedRoles.map((r) => r.toString()).join(', ') : 'None',
             },
           )
-          .setThumbnail(newMember.user.displayAvatarURL())
           .setTimestamp(),
       );
     }
@@ -172,8 +152,9 @@ export function registerLogEvents(client: Client) {
     }
   });
 
-  client.on(Events.MessageDelete, async (message: Message) => {
-    if (!message.guild || message.author?.bot) return;
+  client.on(Events.MessageDelete, async (message) => {
+    if (!message.guild) return;
+    if (message.author?.bot) return;
 
     await sendLog(
       message.guild,
@@ -182,15 +163,16 @@ export function registerLogEvents(client: Client) {
         .addFields(
           { name: 'User', value: message.author?.tag ?? 'Unknown', inline: true },
           { name: 'User ID', value: message.author?.id ?? 'Unknown', inline: true },
-          { name: 'Channel', value: channelLabel(message.channel), inline: true },
-          { name: 'Content', value: shorten(message.content) },
+          { name: 'Channel', value: message.channel.toString(), inline: true },
+          { name: 'Content', value: shorten(message.content ?? 'No content') },
         )
         .setTimestamp(),
     );
   });
 
   client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
-    if (!newMessage.guild || newMessage.author?.bot) return;
+    if (!newMessage.guild) return;
+    if (newMessage.author?.bot) return;
 
     const before = oldMessage.content ?? null;
     const after = newMessage.content ?? null;
@@ -204,7 +186,7 @@ export function registerLogEvents(client: Client) {
         .addFields(
           { name: 'User', value: newMessage.author?.tag ?? 'Unknown', inline: true },
           { name: 'User ID', value: newMessage.author?.id ?? 'Unknown', inline: true },
-          { name: 'Channel', value: channelLabel(newMessage.channel), inline: true },
+          { name: 'Channel', value: newMessage.channel.toString(), inline: true },
           { name: 'Before', value: shorten(before) },
           { name: 'After', value: shorten(after) },
           { name: 'Message Link', value: newMessage.url || 'Unavailable' },
@@ -303,7 +285,16 @@ export function registerLogEvents(client: Client) {
 
   client.on(Events.GuildAuditLogEntryCreate, async (entry, guild) => {
     if (entry.action === AuditLogEvent.MemberKick) {
-      await logKickFromAudit(guild, entry.targetId ?? null, entry.executor?.tag ?? null);
+      await sendLog(
+        guild,
+        new EmbedBuilder()
+          .setTitle('👢 Member Kicked')
+          .addFields(
+            { name: 'Target ID', value: entry.targetId ?? 'Unknown', inline: true },
+            { name: 'Moderator', value: entry.executor?.tag ?? 'Unknown', inline: true },
+          )
+          .setTimestamp(),
+      );
     }
 
     if (entry.action === AuditLogEvent.MemberRoleUpdate) {
